@@ -2,23 +2,40 @@
 yeast networks from simulated datasets
 ========================
 
-v1:
+yeast-edge-weights-v1
 ---
+
+| edge | prediction | pcc | clr | aracne | grnboost | mrnet | tinge |
+|------|------------|-----|-----|--------|----------|-------|-------|
+| ...  | ...        | ... | ... | ...    | ...      | ...   | ...   |
 
 GRNBoost, ARACNE, TINGe have partial networks.
-   CLR, mrnet and pearson have complete networks. 
-   pearson values as absolute ranging from 0 to 1.
+CLR, mrnet and pearson have complete networks. 
+pearson values as absolute ranging from 0 to 1.
 
-v2:
+yeast-edge-weights-v2
 ---
 
-   ARACNE, TINGe have complete networks. GRNBoost has only 500K edges.
-   pearson values can be either positive or negative ranging from -1 to +1
+| edge | prediction | pcc | clr | aracne | grnboost | mrnet | tinge |
+|------|------------|-----|-----|--------|----------|-------|-------|
+| ...  | ...        | ... | ... | ...    | ...      | ...   | ...   |
 
-v3:
+
+ARACNE, TINGe have complete networks. GRNBoost has only 500K edges.
+Pearson values can be either positive or negative ranging from -1 to +1.
+
+
+yeast-edge-weights-v3
 ---
 
-   v2 with WGCNA added since for real networks, we dont have pcc
+| edge | prediction | pcc | clr | aracne | grnboost | mrnet | tinge | wgcna |
+|------|------------|-----|-----|--------|----------|-------|-------|-------|
+| ...  | ...        | ... | ... | ...    | ...      | ...   | ...   | ...   |
+
+Same as v2 with WGCNA added.
+WGCNA replaces pcc values with : 0.5*(1 + Pearson correlation) ^ sft
+where sft is generated based on scale-free topology.
+For real networks, we use WGCNA values instead of PCC.
 
 
 
@@ -28,5 +45,11 @@ arabidopsis networks from real datasets
 arabidopsis-edges-final-test-v1.csv.gz
 ---------------------------------------
 
-   Arabidopsis networks with clr, grnboost, aracne, tinge, aracne, mrnet, wgcna.
-   Missing weights are empty. This will be the final weights
+| edge | clr | grnboost | tinge | aracne | mrnet | wgcna |
+|------|-----|----------|-------|--------|-------|-------|
+| ...  | ... | ...      | ...   | ...    | ...   | ...   |
+
+
+Arabidopsis networks with clr, grnboost, aracne, tinge, aracne, mrnet, wgcna.
+Note that all the networks are parial networks and doesnt have a prediction of 
+Missing weights are empty. This will be the final weights
