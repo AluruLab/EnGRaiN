@@ -45,9 +45,9 @@ arabidopsis networks from real datasets
 arabidopsis-edges-final-test-v1.csv.gz
 ---------------------------------------
 
-| edge | clr | grnboost | tinge | aracne | mrnet | wgcna |
-|------|-----|----------|-------|--------|-------|-------|
-| ...  | ... | ...      | ...   | ...    | ...   | ...   |
+| edge | clr | aracne | grnboost | mrnet | tinge | wgcna |
+|------|-----|--------|----------|-------|-------|-------|
+| ...  | ... | ...    |   ...    | ...   | ...   | ...   |
 
 
 Arabidopsis networks with clr, grnboost, aracne, tinge, aracne, mrnet, wgcna.
