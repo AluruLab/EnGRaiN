@@ -1,0 +1,49 @@
+#
+# Assume $method is available
+# If $1 is given, the use $1
+if [ -z "$1" ]; then
+  method=$1
+fi
+echo $method
+thresh=${method}_preds 
+mkdir -p $thresh
+
+for x in `cat ${method}_tc.csv`; do 
+    y=`printf "$x" | cut -d',' -f 1`  
+    z=`printf "$x" | cut -d',' -f 2` 
+    net_file=$thresh/ensemble_${y}_1X.tsv
+    of1=$thresh/${y}-thresholds.tsv
+    echo Tissue : $y Threshold : $z Input :  `ls ${net_file}`
+    if [ ! -f $of1 ] ; then
+        echo python network_threshold_stats.py $net_file $of1 -n $v -x $z -s 1 -t $method
+        python network_threshold_stats.py $net_file $of1 -n $v -x $z -s 1 -t $method
+    fi
+    # net_file=$thresh/ensemble_${y}_2X.tsv
+    # of2=$thresh/${y}-thresholds-2X.tsv
+    # v=$(( 2*z ))
+    # echo "Threshold : " $v 
+    # echo python network_threshold_stats.py $net_file $of2 -n $v -x $z -s 1 -t $method
+    # python network_threshold_stats.py $net_file $of2 -n $v -x $z -s 1 -t $method
+done 
+
+#usage: network_threshold_stats.py [-h] [-n MIN_EDGES] [-x MAX_EDGES]
+#                                  [-s NUM_STEPS] [-t WT_ATTR]
+#                                  network_file output_file
+#
+#Compute network density vs Threshold
+#
+#positional arguments:
+#  network_file
+#  output_file
+#
+#optional arguments:
+#  -h, --help            show this help message and exit
+#  -n MIN_EDGES, --min_edges MIN_EDGES
+#                        minimum eges in the network
+#  -x MAX_EDGES, --max_edges MAX_EDGES
+#                        maximum eges in the network
+#  -s NUM_STEPS, --num_steps NUM_STEPS
+#                        minimum eges in the network
+#  -t WT_ATTR, --wt_attr WT_ATTR
+#                        name of weight attribute
+#

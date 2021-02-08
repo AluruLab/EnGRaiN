@@ -259,7 +259,7 @@ def get_auc(y, scores):
     return [roc_auc, aupr]#, tpr[i], fpr[i]
 
 
-def trainXGB(Xtrain, ytrain, Xtest, ytest, colFeats):
+def trainXGB(Xtrain, ytrain, Xtest, ytest, colFeats, output_image=None):
     dtrain = xgb.DMatrix(Xtrain,label=ytrain)
     dtest = xgb.DMatrix(Xtest,label=ytest)
     print('Setting XGB params')
@@ -316,8 +316,11 @@ def trainXGB(Xtrain, ytrain, Xtest, ytest, colFeats):
     df1.plot(kind='barh', x='feature_names', y='fscore', legend=False, figsize=(6, 10))
     plt.title('XGBoost Feature Importance')
     plt.xlabel('relative importance')
-    plt.gcf().savefig('feature_importance_xgb.png')
-    plt.show()
+    if output_image is None:
+        plt.gcf().savefig('feature_importance_xgb.png')
+    else:
+        plt.gcf().savefig(output_image)
+    #plt.show()
 #    print 'Saving the models'
 #    bst.save_model(name+'_xgb_v'+clf_VERSION+'.model')
 #    bst.dump_model(name+'_xgb_v'+clf_VERSION+'_dump.raw.txt')
@@ -325,7 +328,7 @@ def trainXGB(Xtrain, ytrain, Xtest, ytest, colFeats):
     return bst
 
 
-def classifier_train(X, y, runXGB, Xtest, ytest, colFeats, pca_comp = 0): # pca = 0 means no PCA applied
+def classifier_train(X, y, runXGB, Xtest, ytest, colFeats, output_image=None, pca_comp = 0): # pca = 0 means no PCA applied
     print('Normalising the input data...')
     scaler = StandardScaler()#MinMaxScaler()#StandardScaler()
     scaler.fit(X)
@@ -340,7 +343,7 @@ def classifier_train(X, y, runXGB, Xtest, ytest, colFeats, pca_comp = 0): # pca 
 
     if runXGB == 1:
         print('Running the XGB classifier')
-        clf = trainXGB(pca_scaledX, y, scaler.transform(Xtest), ytest, colFeats)
+        clf = trainXGB(pca_scaledX, y, scaler.transform(Xtest), ytest, colFeats, output_image)
         index = 1
     return scaler, pca, clf, index
 
@@ -387,8 +390,8 @@ def runRankAvg(data, methods):
     # reverse sorting the avgRank as auc needs scores.
     return get_auc(data['prediction'], df_edges['rankAvg'][::-1])
 
-def individual_method(data, rankAvg=False):
-    methods = [c for c in data.columns if c not in ['prediction', 'edge']]
+def individual_method(data, methods, rankAvg=False):
+    #methods = [c for c in data.columns if c not in ['prediction', 'edge']]
     results = {}
     for m in methods:
         auc = get_auc(data['prediction'], data[m])
@@ -402,10 +405,10 @@ def individual_method(data, rankAvg=False):
         print(r, results[r])
     return results
 
-def pandas_classifier(df_train, df_test, runXGB, K=5):
+def pandas_classifier(df_train, df_test, runXGB, colFeats, output_image=None, K=5):
     print('Performing ' + str(K) + '-fold cross validation')
     auc_fold = []
-    colFeats = [c for c in df_train.columns if c not in ['prediction', 'edge']]
+    #colFeats = [c for c in df_train.columns if c not in ['prediction', 'edge']]
     print(colFeats)
 
     for k in range(K):# performing K fold validation
@@ -423,13 +426,13 @@ def pandas_classifier(df_train, df_test, runXGB, K=5):
             print('Calling the classifier to train')
             scaler, pca, clf, index = classifier_train(datatrain[colFeats], datatrain['prediction'],
                     runXGB, datavalid[colFeats], datavalid['prediction'],
-                    colFeats)
+                    colFeats, output_image)
             print('Analysing the test predictions for fold num ', k)
             pred_array, auc = classifier_test(datavalid[colFeats],
                     datavalid['prediction'], clf, index, scaler, 0)
             auc_fold.append(auc[0])
             print('test auc = '+str(auc[0]) )
-            individual_method(datavalid, rankAvg=False)
+            individual_method(datavalid, colFeats, rankAvg=False)
             print('------------------------------------------------------------')
     if K != 0:
         print('************************************************************************')
@@ -523,7 +526,8 @@ def analysis_data_v3_xgboost():
     #print(df_classifier, df)
     #print(df.columns)
 
-    trained_params = pandas_classifier(df_train, df_test, 1)
+    colFeats = [c for c in df_train.columns if c not in ['prediction', 'edge']]
+    trained_params = pandas_classifier(df_train, df_test, 1, colFeats)
 
 
     # In[17]:
@@ -688,7 +692,8 @@ def analysis_data_v3_xgboost():
 
 def athaliana_individual_network():
     df_train, df_test = load_v3_dataset()
-    trained_params = pandas_classifier(df_train, df_test, 1)
+    colFeats = [c for c in df_train.columns if c not in ['prediction', 'edge']]
+    trained_params = pandas_classifier(df_train, df_test, 1, colFeats)
     ath_types = ['chemical', 'development', 'flower', 'hormone-aba-iaa-ga-br' ,'hormone-ja-sa-ethylene',
             'leaf', 'light', 'nutrients', 'root', 'rosette', 'seed', 'seedling1wk', 'seedling2wk',
             'shoot', 'stress-light', 'stress-other', 'stress-pathogen', 'stress-salt-drought',
@@ -725,7 +730,7 @@ def athaliana_individual_network():
 # In[13]:
 
 
-def athaliana_ensemble_train(train_dir, tissue_types_train, colFeats):
+def athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image):
     # training
     df_tis_train = pd.DataFrame([])
     for i, t in enumerate(tissue_types_train):
@@ -739,7 +744,7 @@ def athaliana_ensemble_train(train_dir, tissue_types_train, colFeats):
         df_tis = df_tis.fillna(0)
         df_tis_train = pd.concat([df_tis_train, df_tis], ignore_index=True)
 
-    trained_params_tissue = pandas_classifier(df_tis_train, df_tis_train, 1)
+    trained_params_tissue = pandas_classifier(df_tis_train, df_tis_train, 1, colFeats, output_image)
     return trained_params_tissue
 
 
@@ -787,7 +792,7 @@ def athaliana_ensemble_aupr(tissue_types=None):
         print('\n ENSEMBLE better? ', ensemble_compare, '\n')
 
 
-def athaliana_ensemble_predict(network_file, output_file, tissue_types=None):
+def athaliana_ensemble_predict1(network_file, output_file, tissue_types=None):
     train_dir = 'data/athaliana_raw/'
     default_types = ['flower', 'leaf','light','stress-temperature', 'hormone-ja-sa-ethylene']
     if tissue_types is None:
@@ -804,7 +809,9 @@ def athaliana_ensemble_predict(network_file, output_file, tissue_types=None):
             'stress-salt-drought', 'development', 'hormone-aba-iaa-ga-br']
 
 
-    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats)
+    output_image = output_file.split(".")[0]  + ".png"
+    print("Features Image :", output_image)
+    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
 
     df_tis  = pd.read_csv(network_file, sep=',')
     df_tis = df_tis.fillna(0)
@@ -831,7 +838,9 @@ def athaliana_ensemble_predict2(network_file, output_file, tissue_types=None):
             'stress-salt-drought', 'development', 'hormone-aba-iaa-ga-br']
 
 
-    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats)
+    output_image = output_file.split(".")[0]  + ".png"
+    print("Features Image :", output_image)
+    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
 
     df_tis  = pd.read_csv(network_file, sep=',')
     df_tis = df_tis.fillna(0)
@@ -842,6 +851,163 @@ def athaliana_ensemble_predict2(network_file, output_file, tissue_types=None):
     df_tis.to_csv(output_file, sep="\t", index=False)
 
 
+def athaliana_ensemble_predict3(network_file, output_file, tissue_types=None):
+    train_dir = 'data/athaliana_raw/'
+    default_types = ['flower', 'leaf','light','stress-temperature', 'hormone-ja-sa-ethylene']
+    if tissue_types is None:
+        tissue_types_train = default_types
+    else:
+        tissue_types_train = tissue_types
+
+    #colFeats = ['clr', 'aracne', 'grnboost', 'mrnet', 'tinge', 'wgcna']
+    colFeats = ['clr', 'aracne', 'grnboost', 'mrnet', 'tinge']
+    # testing
+    # predicting using the trained params
+    tissue_types_test = ['root', 'rosette', 'seed', 'seedling1wk',
+            'seedling2wk', 'shoot', 'wholeplant', 'chemical', 'nutrients',
+            'stress-light', 'stress-other', 'stress-pathogen',
+            'stress-salt-drought', 'development', 'hormone-aba-iaa-ga-br']
+
+
+    output_image = output_file.split(".")[0]  + ".png"
+    print("Features Image :", output_image)
+    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
+
+    df_tis  = pd.read_csv(network_file, sep=',')
+    df_tis = df_tis.fillna(0)
+    print("Loaded Network file : ", network_file)
+    pred_array = classifier_prediction(df_tis[colFeats], clf, index, scaler, 0)
+    print("Finished prediction for Network file : ", network_file)
+    df_tis['wt'] = pred_array
+    df_tis.to_csv(output_file, sep="\t", index=False)
+
+
+def athaliana_ensemble_predict4(network_file, output_file, tissue_types=None):
+    train_dir = 'data/athaliana_raw/'
+    default_types = ['flower', 'leaf','light','stress-temperature', 'hormone-ja-sa-ethylene']
+    if tissue_types is None:
+        tissue_types_train = default_types
+    else:
+        tissue_types_train = tissue_types
+
+    #colFeats = ['clr', 'aracne', 'grnboost', 'mrnet', 'tinge', 'wgcna']
+    colFeats = ['clr', 'aracne', 'grnboost', 'tinge']
+    # testing
+    # predicting using the trained params
+    tissue_types_test = ['root', 'rosette', 'seed', 'seedling1wk',
+            'seedling2wk', 'shoot', 'wholeplant', 'chemical', 'nutrients',
+            'stress-light', 'stress-other', 'stress-pathogen',
+            'stress-salt-drought', 'development', 'hormone-aba-iaa-ga-br']
+
+
+    output_image = output_file.split(".")[0]  + ".png"
+    print("Features Image :", output_image)
+    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
+
+    df_tis  = pd.read_csv(network_file, sep=',')
+    df_tis = df_tis.fillna(0)
+    print("Loaded Network file : ", network_file)
+    pred_array = classifier_prediction(df_tis[colFeats], clf, index, scaler, 0)
+    print("Finished prediction for Network file : ", network_file)
+    df_tis['wt'] = pred_array
+    df_tis.to_csv(output_file, sep="\t", index=False)
+
+
+def athaliana_ensemble_predict5a(network_file, output_file, tissue_types=None):
+    train_dir = 'data/athaliana_raw/'
+    default_types = ['flower', 'leaf','light','stress-temperature', 'hormone-ja-sa-ethylene']
+    if tissue_types is None:
+        tissue_types_train = default_types
+    else:
+        tissue_types_train = tissue_types
+
+    #colFeats = ['clr', 'aracne', 'grnboost', 'mrnet', 'tinge', 'wgcna']
+    colFeats = ['clr', 'grnboost', 'tinge']
+    # testing
+    # predicting using the trained params
+    tissue_types_test = ['root', 'rosette', 'seed', 'seedling1wk',
+            'seedling2wk', 'shoot', 'wholeplant', 'chemical', 'nutrients',
+            'stress-light', 'stress-other', 'stress-pathogen',
+            'stress-salt-drought', 'development', 'hormone-aba-iaa-ga-br']
+
+
+    output_image = output_file.split(".")[0]  + ".png"
+    print("Features Image :", output_image)
+    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
+
+    df_tis  = pd.read_csv(network_file, sep=',')
+    df_tis = df_tis.fillna(0)
+    print("Loaded Network file : ", network_file)
+    pred_array = classifier_prediction(df_tis[colFeats], clf, index, scaler, 0)
+    print("Finished prediction for Network file : ", network_file)
+    df_tis['wt'] = pred_array
+    df_tis.to_csv(output_file, sep="\t", index=False)
+
+def athaliana_ensemble_predict5b(network_file, output_file, tissue_types=None):
+    train_dir = 'data/athaliana_raw/'
+    default_types = ['flower', 'leaf','light','stress-temperature', 'hormone-ja-sa-ethylene']
+    if tissue_types is None:
+        tissue_types_train = default_types
+    else:
+        tissue_types_train = tissue_types
+
+    #colFeats = ['clr', 'aracne', 'grnboost', 'mrnet', 'tinge', 'wgcna']
+    colFeats = ['clr', 'aracne', 'grnboost']
+    # testing
+    # predicting using the trained params
+    tissue_types_test = ['root', 'rosette', 'seed', 'seedling1wk',
+            'seedling2wk', 'shoot', 'wholeplant', 'chemical', 'nutrients',
+            'stress-light', 'stress-other', 'stress-pathogen',
+            'stress-salt-drought', 'development', 'hormone-aba-iaa-ga-br']
+
+
+    output_image = output_file.split(".")[0]  + ".png"
+    print("Features Image :", output_image)
+    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
+
+    df_tis  = pd.read_csv(network_file, sep=',')
+    df_tis = df_tis.fillna(0)
+    print("Loaded Network file : ", network_file)
+    pred_array = classifier_prediction(df_tis[colFeats], clf, index, scaler, 0)
+    print("Finished prediction for Network file : ", network_file)
+    df_tis['wt'] = pred_array
+    df_tis.to_csv(output_file, sep="\t", index=False)
+
+def athaliana_ensemble_predict6(network_file, output_file, tissue_types=None):
+    train_dir = 'data/athaliana_raw/'
+    default_types = ['flower', 'leaf','light','stress-temperature', 'hormone-ja-sa-ethylene']
+    if tissue_types is None:
+        tissue_types_train = default_types
+    else:
+        tissue_types_train = tissue_types
+
+    #colFeats = ['clr', 'aracne', 'grnboost', 'mrnet', 'tinge', 'wgcna']
+    colFeats = ['clr', 'grnboost']
+    # testing
+    # predicting using the trained params
+    tissue_types_test = ['root', 'rosette', 'seed', 'seedling1wk',
+            'seedling2wk', 'shoot', 'wholeplant', 'chemical', 'nutrients',
+            'stress-light', 'stress-other', 'stress-pathogen',
+            'stress-salt-drought', 'development', 'hormone-aba-iaa-ga-br']
+
+    output_image = output_file.split(".")[0]  + ".png"
+    print("Features Image :", output_image)
+    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
+
+    df_tis  = pd.read_csv(network_file, sep=',')
+    df_tis = df_tis.fillna(0)
+    print("Loaded Network file : ", network_file)
+    pred_array = classifier_prediction(df_tis[colFeats], clf, index, scaler, 0)
+    print("Finished prediction for Network file : ", network_file)
+    df_tis['wt'] = pred_array
+    df_tis.to_csv(output_file, sep="\t", index=False)
+
+
+
+
+
+
+
 if __name__ == "__main__":
     PROG_DESC = """Train with a subset of network and predit output """
     PARSER = argparse.ArgumentParser(description=PROG_DESC)
@@ -850,6 +1016,27 @@ if __name__ == "__main__":
                                 (currenlty supported: eda, adj, tsv)""")
     PARSER.add_argument("output_file",
                         help="""Output File""")
+    PARSER.add_argument("run_type",
+                        help=""" Run Type""")
     ARGS = PARSER.parse_args()
-    athaliana_ensemble_predict2(ARGS.network_file, ARGS.output_file)
+    run_type = ARGS.run_type
+    print("Network file : ", ARGS.network_file)
+    print("Output file : ", ARGS.output_file)
+    print("Run type : ",  run_type)
+    if run_type == '1':
+        athaliana_ensemble_predict1(ARGS.network_file, ARGS.output_file)
+    elif run_type == '2':
+        athaliana_ensemble_predict2(ARGS.network_file, ARGS.output_file)
+    elif run_type == '3':
+        athaliana_ensemble_predict3(ARGS.network_file, ARGS.output_file)
+    elif run_type == '4':
+        athaliana_ensemble_predict4(ARGS.network_file, ARGS.output_file)
+    elif run_type == '5a':
+        athaliana_ensemble_predict5a(ARGS.network_file, ARGS.output_file)
+    elif run_type == '5b':
+        athaliana_ensemble_predict5b(ARGS.network_file, ARGS.output_file)
+    elif run_type == '6':
+        athaliana_ensemble_predict6(ARGS.network_file, ARGS.output_file)
+    else:
+        print("Invalid arguments")
 

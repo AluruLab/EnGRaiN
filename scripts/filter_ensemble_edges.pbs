@@ -1,0 +1,54 @@
+#
+# Assume $method is available
+# If $1 is given, the use $1 as $method
+# Assume $thresh is available
+# If $2 is given, the use $2 as $thresh
+if [ -z "$1" ]; then
+  method=$1
+fi
+if [ -z "$2" ]; then
+  thresh=$2
+fi
+echo $thresh $method
+#thresh=ensemble_preds1 
+mkdir -p $thresh
+
+for x in `cat ${method}_tc.csv`; do 
+    y=`printf "$x" | cut -d',' -f 1`  
+    z=`printf "$x" | cut -d',' -f 2` 
+    net_file=$thresh/${y}-iqr-preds.tsv
+    of1=$thresh/ensemble_${y}_1X.tsv
+    ((z--))
+    echo Tissue : $y Threshold : $z Input :  `ls ${net_file}`
+    if [ ! -f $of1 ] ; then
+      echo python filter_network.py -x $z $net_file  $of1
+      python filter_network.py -x $z $net_file  $of1
+    fi
+    v=$(( 2*z ))
+    # of2=$thresh/ensemble_${y}_2X.tsv
+    # echo "Threshold : " $v 
+    # echo python eval/filter_network.py  -x $v $net_file  $of2
+    # python eval/filter_network.py  -x $v $net_file  $of2
+done
+
+#usage: filter_network.py [-h] [-w TH_WEIGHT] [-x MAX_EDGES] [-t WT_ATTR] [-r]
+#                         network_file output_file
+#
+#Compute network with edge weights above given Threshold
+#
+#positional arguments:
+#  network_file
+#  output_file
+#
+#optional arguments:
+#  -h, --help            show this help message and exit
+#  -w TH_WEIGHT, --th_weight TH_WEIGHT
+#                        weight threshold for the network. default is lower
+#                        bound, upper bound if -r is given
+#  -x MAX_EDGES, --max_edges MAX_EDGES
+#                        maximum eges in the network
+#  -t WT_ATTR, --wt_attr WT_ATTR
+#                        name of weight attribute
+#  -r, --reverse_order   Order the edges ascending order
+
+
