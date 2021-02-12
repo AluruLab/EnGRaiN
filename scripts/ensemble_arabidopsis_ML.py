@@ -730,6 +730,29 @@ def athaliana_individual_network():
 # In[13]:
 
 
+def athaliana_integ_train(train_dir, colFeats, output_image):
+    # TODO: split half and half
+    random.seed(5)
+    # Ones
+    tisOnes  = pd.read_csv(train_dir+'/all-positives.csv', sep=',')
+    tisOnes['prediction'] = 1
+    print(tisOnes.shape)
+    nrow1 = int(tisOnes.shape[0])
+    nselect1 = int(nrow1/2)
+    lselect1 = random.sample(list(range(nrow1)), nselect1)
+    # Zeros
+    tisZeros = pd.read_csv(train_dir+'/all-negatives.csv', sep=',')
+    tisZeros['prediction'] = 0
+    nrow2 = int(tisZeros.shape[0])
+    nselect2 = int(nrow2/2)
+    lselect2 = random.sample(list(range(nrow2)), nselect2)
+    # 
+    df_tis= pd.concat([tisOnes.iloc[lselect1, ], tisZeros.iloc[lselect2,]], ignore_index=True)
+    df_tis = df_tis.fillna(0)
+    df_excl = pd.concat([tisOnes.drop(lselect1, axis=0), tisZeros.drop(lselect2, axis=0)], ignore_index=True)
+    trained_params_tissue = pandas_classifier(df_tis, df_excl, 1, colFeats, output_image)
+    return trained_params_tissue, df_tis, df_excl
+
 def athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image):
     # training
     df_tis_train = pd.DataFrame([])
@@ -1003,9 +1026,110 @@ def athaliana_ensemble_predict6(network_file, output_file, tissue_types=None):
     df_tis.to_csv(output_file, sep="\t", index=False)
 
 
+def athaliana_integ_predict(network_file, output_file, train_dir, colFeats, output_image):
+    a, df_in, df_out =  athaliana_integ_train(train_dir, colFeats, output_image)
+    clf, index, scaler = a
+    df_tis  = pd.read_csv(network_file, sep=',')
+    df_tis = df_tis.fillna(0)
+    print("Loaded Network file : ", network_file)
+    pred_array = classifier_prediction(df_tis[colFeats], clf, index, scaler, 0)
+    print("Finished prediction for Network file : ", network_file)
+    df_tis = df_tis[['edge']+colFeats]
+    df_tis['wt'] = pred_array
+    df_tis.sort_values(by=['wt'], inplace=True, ascending=False)
+    print(df_tis.columns)
+    if output_file.endswith("tsv"):
+        df_out_file = output_file.replace(".tsv", "_df_out.tsv")
+        df_in_file = output_file.replace(".tsv", "_df_in.tsv")
+        df_tis.to_csv(output_file, sep="\t", index=False)
+        df_in.to_csv(df_in_file, sep="\t", index=False)
+        df_out.to_csv(df_out_file, sep="\t", index=False)
+    if output_file.endswith("csv"):
+        df_out_file = output_file.replace(".csv", "_df_out.csv")
+        df_in_file = output_file.replace(".csv", "_df_in.csv")
+        df_tis.to_csv(output_file, index=False)
+        df_in.to_csv(df_in_file, index=False)
+        df_out.to_csv(df_out_file, index=False)
 
 
+def athaliana_integ_predict7(network_file, output_file):
+    # network and output file1
+    train_dir = 'data/athaliana_raw/'
+    colFeats = ["chemical-clr", "chemical-aracne", "chemical-grnboost", "chemical-mrnet","chemical-tinge","chemical-wgcna",
+         "development-clr","development-aracne","development-grnboost","development-mrnet","development-tinge","development-wgcna",
+         "flower-clr","flower-aracne","flower-grnboost","flower-mrnet","flower-tinge","flower-wgcna",
+         "hormone-aba-iaa-ga-br-clr","hormone-aba-iaa-ga-br-aracne","hormone-aba-iaa-ga-br-grnboost","hormone-aba-iaa-ga-br-mrnet","hormone-aba-iaa-ga-br-tinge","hormone-aba-iaa-ga-br-wgcna",
+         "hormone-ja-sa-ethylene-clr","hormone-ja-sa-ethylene-aracne","hormone-ja-sa-ethylene-grnboost","hormone-ja-sa-ethylene-mrnet","hormone-ja-sa-ethylene-tinge","hormone-ja-sa-ethylene-wgcna",
+         "leaf-clr","leaf-aracne","leaf-grnboost","leaf-mrnet","leaf-tinge","leaf-wgcna",
+         "light-clr","light-aracne","light-grnboost","light-mrnet","light-tinge","light-wgcna",
+         "nutrients-clr","nutrients-aracne","nutrients-grnboost","nutrients-mrnet","nutrients-tinge","nutrients-wgcna",
+         "root-clr","root-aracne","root-grnboost","root-mrnet","root-tinge","root-wgcna",
+         "rosette-clr","rosette-aracne","rosette-grnboost","rosette-mrnet","rosette-tinge","rosette-wgcna",
+         "seed-clr","seed-aracne","seed-grnboost","seed-mrnet","seed-tinge","seed-wgcna",
+         "seedling1wk-clr","seedling1wk-aracne","seedling1wk-grnboost","seedling1wk-mrnet","seedling1wk-tinge","seedling1wk-wgcna",
+         "seedling2wk-clr","seedling2wk-aracne","seedling2wk-grnboost","seedling2wk-mrnet","seedling2wk-tinge","seedling2wk-wgcna",
+         "shoot-clr","shoot-aracne","shoot-grnboost","shoot-mrnet","shoot-tinge","shoot-wgcna",
+         "stress-light-clr","stress-light-aracne","stress-light-grnboost","stress-light-mrnet","stress-light-tinge","stress-light-wgcna",
+         "stress-other-clr","stress-other-aracne","stress-other-grnboost","stress-other-mrnet","stress-other-tinge","stress-other-wgcna",
+         "stress-pathogen-clr","stress-pathogen-aracne","stress-pathogen-grnboost","stress-pathogen-mrnet","stress-pathogen-tinge","stress-pathogen-wgcna",
+         "stress-salt-drought-clr","stress-salt-drought-aracne","stress-salt-drought-grnboost","stress-salt-drought-mrnet","stress-salt-drought-tinge","stress-salt-drought-wgcna",
+         "stress-temperature-clr","stress-temperature-aracne","stress-temperature-grnboost","stress-temperature-mrnet","stress-temperature-tinge","stress-temperature-wgcna",
+         "wholeplant-clr","wholeplant-aracne","wholeplant-grnboost","wholeplant-mrnet","wholeplant-tinge","wholeplant-wgcna"]
+    output_image = output_file.split(".")[0]  + ".png"
+    athaliana_integ_predict(network_file, output_file, train_dir, colFeats, output_image)
 
+def athaliana_integ_predict8(network_file, output_file):
+    # network and output file1
+    train_dir = 'data/athaliana_raw/'
+    colFeats = ["chemical-clr", "chemical-aracne", "chemical-grnboost", "chemical-tinge",
+         "development-clr","development-aracne","development-grnboost","development-tinge",
+         "flower-clr","flower-aracne","flower-grnboost","flower-tinge",
+         "hormone-aba-iaa-ga-br-clr","hormone-aba-iaa-ga-br-aracne","hormone-aba-iaa-ga-br-grnboost","hormone-aba-iaa-ga-br-tinge",
+         "hormone-ja-sa-ethylene-clr","hormone-ja-sa-ethylene-aracne","hormone-ja-sa-ethylene-grnboost","hormone-ja-sa-ethylene-tinge",
+         "leaf-clr","leaf-aracne","leaf-grnboost","leaf-tinge",
+         "light-clr","light-aracne","light-grnboost","light-tinge",
+         "nutrients-clr","nutrients-aracne","nutrients-grnboost","nutrients-tinge",
+         "root-clr","root-aracne","root-grnboost","root-tinge",
+         "rosette-clr","rosette-aracne","rosette-grnboost","rosette-tinge",
+         "seed-clr","seed-aracne","seed-grnboost","seed-tinge",
+         "seedling1wk-clr","seedling1wk-aracne","seedling1wk-grnboost","seedling1wk-tinge",
+         "seedling2wk-clr","seedling2wk-aracne","seedling2wk-grnboost","seedling2wk-tinge",
+         "shoot-clr","shoot-aracne","shoot-grnboost","shoot-tinge",
+         "stress-light-clr","stress-light-aracne","stress-light-grnboost","stress-light-tinge",
+         "stress-other-clr","stress-other-aracne","stress-other-grnboost","stress-other-tinge",
+         "stress-pathogen-clr","stress-pathogen-aracne","stress-pathogen-grnboost","stress-pathogen-tinge",
+         "stress-salt-drought-clr","stress-salt-drought-aracne","stress-salt-drought-grnboost","stress-salt-drought-tinge",
+         "stress-temperature-clr","stress-temperature-aracne","stress-temperature-grnboost","stress-temperature-tinge",
+         "wholeplant-clr","wholeplant-aracne","wholeplant-grnboost","wholeplant-tinge"]
+    output_image = output_file.split(".")[0]  + ".png"
+    athaliana_integ_predict(network_file, output_file, train_dir, colFeats, output_image)
+
+
+def athaliana_integ_predict9(network_file, output_file):
+    # network and output file1
+    train_dir = 'data/athaliana_raw/'
+    colFeats = ["chemical-clr", "chemical-grnboost", 
+         "development-clr","development-grnboost",
+         "flower-clr","flower-grnboost",
+         "hormone-aba-iaa-ga-br-clr","hormone-aba-iaa-ga-br-grnboost",
+         "hormone-ja-sa-ethylene-clr","hormone-ja-sa-ethylene-grnboost",
+         "leaf-clr","leaf-grnboost",
+         "light-clr","light-grnboost",
+         "nutrients-clr","nutrients-grnboost",
+         "root-clr","root-grnboost",
+         "rosette-clr","rosette-grnboost",
+         "seed-clr","seed-grnboost",
+         "seedling1wk-clr","seedling1wk-grnboost",
+         "seedling2wk-clr","seedling2wk-grnboost",
+         "shoot-clr","shoot-grnboost",
+         "stress-light-clr","stress-light-grnboost",
+         "stress-other-clr","stress-other-grnboost",
+         "stress-pathogen-clr","stress-pathogen-grnboost",
+         "stress-salt-drought-clr","stress-salt-drought-grnboost",
+         "stress-temperature-clr","stress-temperature-grnboost",
+         "wholeplant-clr","wholeplant-grnboost"]
+    output_image = output_file.split(".")[0]  + ".png"
+    athaliana_integ_predict(network_file, output_file, train_dir, colFeats, output_image)
 
 
 if __name__ == "__main__":
@@ -1037,6 +1161,12 @@ if __name__ == "__main__":
         athaliana_ensemble_predict5b(ARGS.network_file, ARGS.output_file)
     elif run_type == '6':
         athaliana_ensemble_predict6(ARGS.network_file, ARGS.output_file)
+    elif run_type == '7':
+        athaliana_integ_predict7(ARGS.network_file, ARGS.output_file)
+    elif run_type == '8':
+        athaliana_integ_predict8(ARGS.network_file, ARGS.output_file)
+    elif run_type == '9':
+        athaliana_integ_predict9(ARGS.network_file, ARGS.output_file)
     else:
         print("Invalid arguments")
 

@@ -1,0 +1,12 @@
+*.log
+scripts/edge_networks/
+scripts/ensemble_preds[1-9]/
+scripts/ensemble_preds5[a,b]/
+scripts/aracne_preds/
+scripts/clr_preds/
+scripts/grnboost_preds/
+scripts/mrnet_preds/
+scripts/wgcna_preds/
+scripts/tinge_preds/
+scripts/log/
+scripts/pbs/
