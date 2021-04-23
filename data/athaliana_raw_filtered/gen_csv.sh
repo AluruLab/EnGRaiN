@@ -1,0 +1,1 @@
+for x in flower leaf root rosette seed seedling1wk seedling2wk shoot wholeplant ; do echo ${x} `wc -l ${x}_edges.txt` `grep -f ${x}_edges.txt ../athaliana_raw/${x}-positives.csv | wc -l` ;  head -n 1 ../athaliana_raw/${x}-positives.csv > ${x}-positives.csv ; grep -f ${x}_edges.txt ../athaliana_raw/${x}-positives.csv >> ${x}-positives.csv  ;  done
