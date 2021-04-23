@@ -2,9 +2,10 @@
 # coding: utf-8
 
 # In[1]:
-
 import argparse
 import pandas as pd
+import json
+import functools as ft
 from sklearn import svm
 from pandas import ExcelWriter
 from pandas import ExcelFile
@@ -259,10 +260,10 @@ def get_auc(y, scores):
     return [roc_auc, aupr]#, tpr[i], fpr[i]
 
 
-def trainXGB(Xtrain, ytrain, Xtest, ytest, colFeats, output_image=None):
+def trainXGB(Xtrain, ytrain, Xtest, ytest, colFeats, output_image=None, scale_pos_weight=None):
     dtrain = xgb.DMatrix(Xtrain,label=ytrain)
     dtest = xgb.DMatrix(Xtest,label=ytest)
-    print('Setting XGB params')
+    #print('Setting XGB params')
     evallist  = [(dtest,'test'), (dtrain,'train')]
 
     param = {}
@@ -282,13 +283,15 @@ def trainXGB(Xtrain, ytrain, Xtest, ytest, colFeats, output_image=None):
 
     # CLASS Imbalance handling!
 #    param['scale_pos_weight'] = 10#190/10 # sum(negative cases) / sum(positive cases)
+    if scale_pos_weight is not None:
+        param['scale_pos_weight'] = scale_pos_weight
 
 #    param['booster'] = 'gblinear' #'dart' #'gblinear' # default is tree booster
 #    param['lambda'] = 1
 #    param['alpha'] = 1
 
     num_round = 220#60
-    print('training the XGB classifier')
+    #print('training the XGB classifier')
     bst = xgb.train(param, dtrain, num_round, evallist, early_stopping_rounds=100, verbose_eval=False)
     #print('training completed, printing the relative importance: \
             #      (feature id: importance value)')
@@ -328,8 +331,11 @@ def trainXGB(Xtrain, ytrain, Xtest, ytest, colFeats, output_image=None):
     return bst
 
 
-def classifier_train(X, y, runXGB, Xtest, ytest, colFeats, output_image=None, pca_comp = 0): # pca = 0 means no PCA applied
-    print('Normalising the input data...')
+def classifier_train(X, y, runXGB, Xtest, ytest, colFeats,
+        output_image=None, scale_pos_weight=None, pca_comp = 0): # pca = 0 means no PCA applied
+    #print('Normalising the input data...')
+    #print(X)
+    #print(y)
     scaler = StandardScaler()#MinMaxScaler()#StandardScaler()
     scaler.fit(X)
     scaledX = scaler.transform(X)
@@ -342,8 +348,9 @@ def classifier_train(X, y, runXGB, Xtest, ytest, colFeats, output_image=None, pc
         pca =0
 
     if runXGB == 1:
-        print('Running the XGB classifier')
-        clf = trainXGB(pca_scaledX, y, scaler.transform(Xtest), ytest, colFeats, output_image)
+        #print('Running the XGB classifier')
+        clf = trainXGB(pca_scaledX, y, scaler.transform(Xtest), ytest,
+                       colFeats, output_image, scale_pos_weight)
         index = 1
     return scaler, pca, clf, index
 
@@ -373,7 +380,7 @@ def classifier_test(X, y, clf, index, scaler, pca):
     return pred_array, auc# error
 
 
-def runRankAvg(data, methods):
+def runRankAvg1(data, methods):
     # get the ranks for the individual methods
     df_edges = pd.DataFrame(data['edge'])
     for i, m in enumerate(methods):
@@ -387,10 +394,104 @@ def runRankAvg(data, methods):
         del df_edges[m]
 
     df_edges['rankAvg'] = df_edges.mean(axis=1)
+    mx_rank = df_edges['rankAvg']
+    df_edges['rankAvg'] = 0 - df_edges['rankAvg']
     # reverse sorting the avgRank as auc needs scores.
-    return get_auc(data['prediction'], df_edges['rankAvg'][::-1])
+    #return get_auc(data['prediction'], df_edges['rankAvg'][::-1])
+    return get_auc(data['prediction'], df_edges['rankAvg'])
 
-def individual_method(data, methods, rankAvg=False):
+
+def runRankAvg2(data, methods):
+    # get the ranks for the individual methods
+    df_edges = data[methods + ["prediction"]]
+    df_edges['rankAvg'] = 1/df_edges[methods].rank(ascending=False).mean(axis=1)
+    # reverse sorting the avgRank as auc needs scores.
+    return get_auc(data['prediction'], df_edges['rankAvg'])
+
+
+def runRankAvg3(data, methods):
+    # get the ranks for the individual methods
+    df_edges = data[methods + ["prediction"]]
+    df_edges['rankAvg'] = df_edges[methods].rank(ascending=False).mean(axis=1)
+    # reverse sorting the avgRank as auc needs scores.
+    x, y = get_auc(1 - data['prediction'], df_edges['rankAvg'])
+    return [x, y]
+
+def scalesum_stats(adf, methods):
+    acx = adf[methods]
+    astd = acx.std(axis=0)
+    amean = acx.mean(axis=0)
+    sx1 = (adf[methods] - amean)/astd
+    adf['wt'] =sx1.sum(axis=1)
+    aupr = metrics.average_precision_score(adf.prediction, adf.wt)
+    auroc = metrics.roc_auc_score(adf.prediction, adf.wt)
+    return auroc, aupr
+
+def scalelsum_stats(df, colFeats):
+    adf = pd.concat([allOnes, allZeros])
+    adf[['s', 't']] = adf['edge'].str.split('-', expand=True)
+    ax1 = adf[methods+['s']].rename(columns={'s':'node'})
+    ax2 = adf[methods+['t']].rename(columns={'t':'node'})
+    acx = pd.concat([ax1,ax2])
+    astd = acx.groupby("node").std()
+    amean = acx.groupby("node").mean()
+    amean.reset_index()
+    astd.reset_index()
+    tx1 = pd.DataFrame(adf['s']).rename(columns={'s':'node'}) 
+    tx2 = pd.DataFrame(adf['t']).rename(columns={'t':'node'})
+    smean = tx1.merge(amean, on="node")  
+    sstd = tx1.merge(astd, on="node")   
+    tmean = tx2.merge(amean, on="node") 
+    tstd = tx2.merge(astd, on="node")
+    e1 = (adf[methods] - smean[methods])/sstd[methods]
+    e2 = (adf[methods] - tmean[methods])/tstd[methods]
+    ex1 = e1 **2
+    ex2 = e2 **2
+    sx1 = np.sqrt(ex1 + ex2)
+    adf['wt'] =sx1.sum(axis=1)
+    aupr = metrics.average_precision_score(adf.prediction, adf.wt)
+    auroc = metrics.roc_auc_score(adf.prediction, adf.wt)
+    return auroc, aupr
+
+
+def runScaleLSum(allOnes, allZeros, methods):
+    adf = pd.concat([allOnes, allZeros])
+    adf[['s', 't']] = adf['edge'].str.split('-', expand=True)
+    ax1 = adf[methods+['s']].rename(columns={'s':'node'})
+    ax2 = adf[methods+['t']].rename(columns={'t':'node'})
+    acx = pd.concat([ax1,ax2])
+    astd = acx.groupby("node").std()
+    amean = acx.groupby("node").mean()
+    amean.reset_index()
+    astd.reset_index()
+    tx1 = pd.DataFrame(adf['s']).rename(columns={'s':'node'}) 
+    tx2 = pd.DataFrame(adf['t']).rename(columns={'t':'node'})
+    smean = tx1.merge(amean, on="node")  
+    sstd = tx1.merge(astd, on="node")   
+    tmean = tx2.merge(amean, on="node") 
+    tstd = tx2.merge(astd, on="node")
+    e1 = (adf[methods] - smean[methods])/sstd[methods]
+    e2 = (adf[methods] - tmean[methods])/tstd[methods]
+    ex1 = e1 **2
+    ex2 = e2 **2
+    sx1 = np.sqrt(ex1 + ex2)
+    adf['scaleLSum'] =sx1.sum(axis=1)
+    return get_auc(adf['prediction'], adf['scaleLSum'])
+
+
+def runScaleSum(allOnes, allZeros, methods):
+    adf = pd.concat([allOnes, allZeros])
+    acx = adf[methods]
+    astd = acx.std(axis=0)
+    amean = acx.mean(axis=0)
+    sx1 = (adf[methods] - amean)/astd
+    adf['wt'] =sx1.sum(axis=1)
+    adf['scaleSum'] =sx1.sum(axis=1)
+    return get_auc(adf['prediction'], adf['scaleSum'])
+
+
+
+def individual_method(data, methods, rankAvg=False, printIt=True):
     #methods = [c for c in data.columns if c not in ['prediction', 'edge']]
     results = {}
     for m in methods:
@@ -399,21 +500,27 @@ def individual_method(data, methods, rankAvg=False):
 
     # Adding the rank Avg method
     if rankAvg:
-        results['rankAvg'] = runRankAvg(data, methods)
+        results['RankAvg-Sorted'] = runRankAvg1(data, methods)
+        results['RankAvg-Reciprocal'] = runRankAvg2(data, methods)
+        results['RankAvg-UpDown'] = runRankAvg3(data, methods)
+        results['RankAvg-ScaleSum'] = scalesum_stats(data, methods)
     #print(results)
-    for r in results:
-        print(r, results[r])
+    if printIt is True:
+        for r in results:
+            print(r, results[r])
     return results
 
-def pandas_classifier(df_train, df_test, runXGB, colFeats, output_image=None, K=5):
-    print('Performing ' + str(K) + '-fold cross validation')
+def pandas_classifier(df_train, df_test, runXGB, colFeats,
+        output_image=None, scale_pos_weight=None, K=10, rAvg=False,
+        fold_auc=True):
+    print('Performing ' + str(K) + '-fold cross validation with ', colFeats)
     auc_fold = []
+    pr_fold = []
     #colFeats = [c for c in df_train.columns if c not in ['prediction', 'edge']]
-    print(colFeats)
 
     for k in range(K):# performing K fold validation
         #if k == 0: # running only for k'th fold
-            print('Fold_num = ' + str(k))
+            # print('Fold_num = ' + str(k))
             #train_rows = [i for i in range(len(df_train)) if i%K!=k]
             datatrain = df_train.loc[[i for i in range(len(df_train)) if i%K!=k]] # training
             #valid_rows = [i for i in range(len(df_train)) if i%K==k]
@@ -422,28 +529,38 @@ def pandas_classifier(df_train, df_test, runXGB, colFeats, output_image=None, K=
 #             ytrain =  #.iloc[:, -1]
 #             Xvalid =  #.iloc[:, 0:-1]
 #             yvalid = #.iloc[:, -1]
-            print('--------------------------------------------------------------')
-            print('Calling the classifier to train')
+            #print('--------------------------------------------------------------')
+            #print('Calling the classifier to train')
+            #print(datatrain[colFeats].head())
+            #print(datavalid[colFeats].head())
             scaler, pca, clf, index = classifier_train(datatrain[colFeats], datatrain['prediction'],
                     runXGB, datavalid[colFeats], datavalid['prediction'],
-                    colFeats, output_image)
-            print('Analysing the test predictions for fold num ', k)
+                    colFeats, output_image, scale_pos_weight)
+            #print('Analysing the test predictions for fold num ', k)
             pred_array, auc = classifier_test(datavalid[colFeats],
                     datavalid['prediction'], clf, index, scaler, 0)
             auc_fold.append(auc[0])
+            pr_fold.append(auc[1])
             print('test auc = '+str(auc[0]) )
-            individual_method(datavalid, colFeats, rankAvg=False)
-            print('------------------------------------------------------------')
+            if fold_auc is True:
+                individual_method(datavalid, colFeats, rankAvg=rAvg)
+            #print('------------------------------------------------------------')
+    avg_auc = sum(np.array(auc_fold))/int(K) if K > 0 else 0.0
+    avg_aupr = sum(np.array(pr_fold))/int(K) if K > 0 else 0.0
+    std_auc = np.std(np.array(auc_fold)) if K > 0 else 0.0
+    std_aupr = np.std(np.array(pr_fold)) if K > 0 else 0.0
     if K != 0:
         print('************************************************************************')
-        print(auc_fold)#, sum(np.array(auc_fold))/int(K))
-        print('Average '+str(K)+' fold CV result= ', str(sum(np.array(auc_fold))/int(K)))
+        #print(auc_fold)#, sum(np.array(auc_fold))/int(K))
+        #print(pr_fold)
+        print('AVG ', str(K), 'AUROC', str(avg_auc), '+/-', str(std_auc))
+        print('AVG ', str(K), 'AUPR', str(avg_aupr), '+/-', str(std_aupr))
         print('************************************************************************')
 
 #     pred_array, auc = classifier_test(df_test[colFeats], df_test['prediction'], clf, index, scaler, 0)
 #     print('TEST AUC on standalone data = ', auc[0])
 #     print('individual methods: ', individual_method(df_test))
-    return [clf, index, scaler]
+    return [clf, index, scaler, avg_auc, avg_aupr]
 
 def load_v3_dataset():
     # In[6]:
@@ -484,6 +601,30 @@ def load_v3_dataset():
     return(df_train, df_test)
 
 
+def load_v4_dataset():
+    # In[6]:
+    df = pd.read_csv('data/yeast-edge-weights-v4.csv', sep=',')
+    del df['pcc']
+    # del df['grnboost']
+    # for c in df.columns:
+    #     print(c, df[c].value_counts())
+    df['prediction'].value_counts()
+    #
+    allOnes = df[df['prediction']==1]
+    allZeros = df[df['prediction']==0]
+    numOnes = len(allOnes)
+    numZeros = len(allZeros)
+    trainPTS = 20000 # train + valid
+    testPTS = 200000 # test
+    # choose 20K points for training
+    # Randomly choose 200K points for testing
+    # evenly divide the ones among train/test
+    df_train = pd.concat([allOnes[:numOnes//2], allZeros[:trainPTS]], ignore_index=True)
+    df_test = pd.concat([allOnes[numOnes//2:], allZeros[trainPTS: trainPTS+testPTS]], ignore_index=True)
+    return (df_train, df_test, allOnes, allZeros)
+
+
+
 def analysis_data_v3():
     df_train, df_test = load_v3_dataset()
     # In[10]:
@@ -505,40 +646,41 @@ def analysis_data_v3():
     visual2D(Xviz[vizPTS, :], yviz[vizPTS])
 
 
+def analysis_data_v4_xgboost():
+    df_train, df_test, allOnes, allZeros = load_v4_dataset()
+    print("Loaded v4 dataset ")
+    print(df_train.head())
+    print(df_test.head())
+    output_image="v4-analysis.png"
+    colFeats = [c for c in df_train.columns if c not in ['prediction', 'edge']]
+    trained_params = pandas_classifier(df_train, df_test, 1, colFeats, output_image)
+    print('******************** Indiv. methods on Test **********************')
+    individual_method(df_test, colFeats, rankAvg=True)
+    print('scaleLSum on Test :', runScaleLSum(allOnes, allZeros, colFeats))
+    print('scaleSum  on Test :', runScaleSum(allOnes, allZeros, colFeats))
+    print('******************************************************************')
+    colFeats2 = ["clr", "grnboost", "aracne", "mrnet", "tinge", "wgcna"]
+    trained_params2 = pandas_classifier(df_train, df_test, 1, colFeats2, output_image)
+    print('******************* Indiv. methods on Top 6 **********************')
+    individual_method(df_test, colFeats2, rankAvg=True)
+    print('scaleLSum Top 6 :', runScaleLSum(allOnes, allZeros, colFeats2))
+    print('scaleSum  Top 6 :', runScaleSum(allOnes, allZeros, colFeats2))
+    print('******************************************************************')
+    colFeats3 = ["clr", "grnboost", "aracne", "mrnet", "tinge", "wgcna", "genie3"]
+    trained_params3 = pandas_classifier(df_train, df_test, 1, colFeats3, output_image)
+    print('******************* Indiv. methods on Top 7 **********************')
+    individual_method(df_test, colFeats3, rankAvg=True)
+    print('scaleLSum Top 7 :', runScaleLSum(allOnes, allZeros, colFeats3))
+    print('scaleSum  Top 7 :', runScaleSum(allOnes, allZeros, colFeats3))
+    print('******************************************************************')
+
 def analysis_data_v3_xgboost():
     df_train, df_test = load_v3_dataset()
-    # ## Binary Classification using traditional ML techniques - XGBoost
-
-    # In[2]:
-
-
-    # In[15]:
-
-
-    # Convert data to pandas before passing
-    # np.random.seed(15)
-    # random.seed(15)
-    # df_X = pd.DataFrame(X, columns=[c for c in df.columns if c!='prediction'])
-    # df_y = pd.DataFrame(pd.Series(y, name='label'))
-    # df_train = pd.concat([df_X, df_y], axis=1)
-    # df_test
-
-    #print(df_classifier, df)
-    #print(df.columns)
 
     colFeats = [c for c in df_train.columns if c not in ['prediction', 'edge']]
     trained_params = pandas_classifier(df_train, df_test, 1, colFeats)
 
-
-    # In[17]:
-
-
-    print('individual methods on test: ', individual_method(df_test, rankAvg=True))
-
-
-    # ### Loading the arabidopsis data
-
-    # In[13]:
+    print('individual methods on test: ', individual_method(df_test, colFeats, rankAvg=True))
 
 
     abdOnes  = pd.read_csv('data/true_network_positive_edges.csv', sep=',')
@@ -589,13 +731,13 @@ def analysis_data_v3_xgboost():
 
 
     # predicting using the trained params
-    clf, index, scaler = trained_params
+    clf, index, scaler, _, _ = trained_params
 
     print('Check col order: ', colFeats)
     pred_array, auc = classifier_test(df_abd[colFeats], df_abd['prediction'], clf, index, scaler, 0)
     print('ENSEMBLE AUC on Arabidopsis data = ', auc[0])
     print('individual methods on arabidopsis: ')
-    individual_method(df_abd)
+    individual_method(df_abd, colFeats)
 
 
     # ## RESULTS: imputation with zeros
@@ -700,7 +842,7 @@ def athaliana_individual_network():
             'stress-temperature', 'wholeplant']
 
     # predicting using the trained params
-    clf, index, scaler = trained_params
+    clf, index, scaler, _, _ = trained_params
 
     for i, t in enumerate(ath_types):
         print('******************************************')
@@ -729,35 +871,101 @@ def athaliana_individual_network():
 
 # In[13]:
 
+def union_net(df_tis, union_feats):
+    data_dct = {'edge' : df_tis.edge}
+    for x in union_feats:
+        data_dct[x["name"]] = df_tis[x["feats"]].max(axis=1)
+    data_dct['prediction'] = df_tis.prediction
+    df = pd.DataFrame(data=data_dct)
+    return df
 
-def athaliana_integ_train(train_dir, colFeats, output_image):
+def athaliana_unionavg_train(train_dir, union_feats):
+    tisOnes  = pd.read_csv(train_dir+'/all-positives.csv', sep=',')
+    tisOnes['prediction'] = 1
+    print(tisOnes.shape)
+    # Zeros
+    tisZeros = pd.read_csv(train_dir+'/all-negatives.csv', sep=',')
+    tisZeros['prediction'] = 0
+    df_tis= pd.concat([tisOnes, tisZeros], ignore_index=True)
+    df_tis = df_tis.fillna(0)
+    df_union = union_net(df_tis, union_feats)
+    df_union.wt = 1/df_union.rank(ascending=False).mean(axis=1)
+    aupr = metrics.average_precision_score(df_union.prediction, df_union.wt)
+    auroc = metrics.roc_auc_score(df_union.prediction, df_union.wt)
+    print("FEATS", "NFEATS", "AUROC", "AUPR")
+    print("Union-Max", sum(len(x) for x in union_feats), auroc, aupr)
+    methods = [x["name"] for x in union_feats]
+    auroc, aupr = scalesum_stats(df_union, methods)
+    print("all-scalelsum", len(methods), auroc, aupr)
+    for x in methods:
+        aupr = metrics.average_precision_score(df_union.prediction, df_union[x])
+        auroc = metrics.roc_auc_score(df_union.prediction, df_union[x])
+        print(x, 20, auroc, aupr)
+
+def avgrank_stats(df, colFeats):
+    df_tis = df[colFeats + ["prediction"]]
+    df_tis.wt = 1/df_tis.rank(ascending=False).mean(axis=1)
+    aupr = metrics.average_precision_score(df_tis.prediction, df_tis.wt)
+    auroc = metrics.roc_auc_score(df_tis.prediction, df_tis.wt)
+    return auroc, aupr
+
+
+
+
+def athaliana_rankavg_train(train_dir, colFeats):
+    tisOnes  = pd.read_csv(train_dir+'/all-positives.csv', sep=',')
+    tisOnes['prediction'] = 1
+    #print(tisOnes.shape)
+    # Zeros
+    tisZeros = pd.read_csv(train_dir+'/all-negatives.csv', sep=',')
+    tisZeros['prediction'] = 0
+    df_tis= pd.concat([tisOnes, tisZeros], ignore_index=True)
+    df_tis = df_tis.fillna(0)
+    print("FEATS", "NFEATS", "AUROC", "AUPR")
+    auroc, aupr = avgrank_stats(df_tis, colFeats)
+    print("all-avergrank", len(colFeats), auroc, aupr)
+    auroc, aupr = scalesum_stats(df_tis, colFeats)
+    print("all-scalelsum", len(colFeats), auroc, aupr)
+    methods = ["clr", "grnboost", "tinge", "aracne", "mrnet", "wgcna"]
+    for x in methods:
+        xfeats = [y for y in colFeats if y.endswith(x)]
+        auroc, aupr = avgrank_stats(df_tis, xfeats)
+        print(x, len(xfeats), auroc, aupr)
+ 
+
+def athaliana_integ_train(train_dir, colFeats, output_image,
+                         pos_ratio=0.5, neg_ratio=0.5, scale_pos_weight=None,
+                         random_seed=5):
     # TODO: split half and half
-    random.seed(5)
+    if random_seed is not None:
+        random.seed(random_seed)
     # Ones
     tisOnes  = pd.read_csv(train_dir+'/all-positives.csv', sep=',')
     tisOnes['prediction'] = 1
     print(tisOnes.shape)
     nrow1 = int(tisOnes.shape[0])
-    nselect1 = int(nrow1/2)
+    nselect1 = int(nrow1*pos_ratio)
     lselect1 = random.sample(list(range(nrow1)), nselect1)
     # Zeros
     tisZeros = pd.read_csv(train_dir+'/all-negatives.csv', sep=',')
     tisZeros['prediction'] = 0
     nrow2 = int(tisZeros.shape[0])
-    nselect2 = int(nrow2/2)
+    nselect2 = int(nrow2*neg_ratio)
     lselect2 = random.sample(list(range(nrow2)), nselect2)
     # 
     df_tis= pd.concat([tisOnes.iloc[lselect1, ], tisZeros.iloc[lselect2,]], ignore_index=True)
     df_tis = df_tis.fillna(0)
     df_excl = pd.concat([tisOnes.drop(lselect1, axis=0), tisZeros.drop(lselect2, axis=0)], ignore_index=True)
-    trained_params_tissue = pandas_classifier(df_tis, df_excl, 1, colFeats, output_image)
+    trained_params_tissue = pandas_classifier(df_tis, df_excl, 1, colFeats,
+                                              output_image, scale_pos_weight)
     return trained_params_tissue, df_tis, df_excl
 
-def athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image):
+def athaliana_ensemble_train(train_dir, tissue_types_train,
+                             colFeats, output_image, df_test = None, fold_auc=True):
     # training
     df_tis_train = pd.DataFrame([])
     for i, t in enumerate(tissue_types_train):
-        print(train_dir, i, t)
+        #print(train_dir, i, t)
         tisOnes  = pd.read_csv(train_dir+'/'+t+'-positives.csv', sep=',')
         tisOnes['prediction'] = 1
         tisZeros = pd.read_csv(train_dir+'/'+t+'-negatives.csv', sep=',')
@@ -767,7 +975,10 @@ def athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_ima
         df_tis = df_tis.fillna(0)
         df_tis_train = pd.concat([df_tis_train, df_tis], ignore_index=True)
 
-    trained_params_tissue = pandas_classifier(df_tis_train, df_tis_train, 1, colFeats, output_image)
+    if df_test is None:
+       trained_params_tissue = pandas_classifier(df_tis_train, df_tis_train, 1, colFeats, output_image, fold_auc=fold_auc)
+    else:
+       trained_params_tissue = pandas_classifier(df_tis_train, df_test, 1, colFeats, output_image, fold_auc=fold_auc)
     return trained_params_tissue
 
 
@@ -788,7 +999,7 @@ def athaliana_ensemble_aupr(tissue_types=None):
             'hormone-aba-iaa-ga-br']
 
 
-    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats)
+    clf, index, scaler, _, _ = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats)
 
     for i, t in enumerate(tissue_types_test):
         print('******************************************')
@@ -807,7 +1018,7 @@ def athaliana_ensemble_aupr(tissue_types=None):
         pred_array, auc = classifier_test(df_tis[colFeats], df_tis['prediction'], clf, index, scaler, 0)
         print('ENSEMBLE Arabidopsis data AUC = ', auc[0], ' AUPR = ', auc[1])
         print('individual methods on arabidopsis: [auroc, aupr]')
-        ind_results = individual_method(df_tis, rankAvg=False)
+        ind_results = individual_method(df_tis, colFeats, rankAvg=False)
         ensemble_compare = True
         for r in ind_results:
             #print(r, ind_results[r]<auc[0])
@@ -834,7 +1045,7 @@ def athaliana_ensemble_predict1(network_file, output_file, tissue_types=None):
 
     output_image = output_file.split(".")[0]  + ".png"
     print("Features Image :", output_image)
-    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
+    clf, index, scaler, _, _ = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
 
     df_tis  = pd.read_csv(network_file, sep=',')
     df_tis = df_tis.fillna(0)
@@ -842,7 +1053,8 @@ def athaliana_ensemble_predict1(network_file, output_file, tissue_types=None):
     pred_array = classifier_prediction(df_tis[colFeats], clf, index, scaler, 0)
     print("Finished prediction for Network file : ", network_file)
     df_tis['wt'] = pred_array
-    df_tis.to_csv(output_file, sep="\t", index=False)
+    if output_file is not None:
+        df_tis.to_csv(output_file, sep="\t", index=False)
 
 def athaliana_ensemble_predict2(network_file, output_file, tissue_types=None):
     train_dir = 'data/athaliana_raw2/'
@@ -863,7 +1075,7 @@ def athaliana_ensemble_predict2(network_file, output_file, tissue_types=None):
 
     output_image = output_file.split(".")[0]  + ".png"
     print("Features Image :", output_image)
-    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
+    clf, index, scaler, _, _ = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
 
     df_tis  = pd.read_csv(network_file, sep=',')
     df_tis = df_tis.fillna(0)
@@ -871,7 +1083,8 @@ def athaliana_ensemble_predict2(network_file, output_file, tissue_types=None):
     pred_array = classifier_prediction(df_tis[colFeats], clf, index, scaler, 0)
     print("Finished prediction for Network file : ", network_file)
     df_tis['wt'] = pred_array
-    df_tis.to_csv(output_file, sep="\t", index=False)
+    if output_file is not None:
+        df_tis.to_csv(output_file, sep="\t", index=False)
 
 
 def athaliana_ensemble_predict3(network_file, output_file, tissue_types=None):
@@ -894,7 +1107,7 @@ def athaliana_ensemble_predict3(network_file, output_file, tissue_types=None):
 
     output_image = output_file.split(".")[0]  + ".png"
     print("Features Image :", output_image)
-    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
+    clf, index, scaler, _, _ = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
 
     df_tis  = pd.read_csv(network_file, sep=',')
     df_tis = df_tis.fillna(0)
@@ -902,7 +1115,8 @@ def athaliana_ensemble_predict3(network_file, output_file, tissue_types=None):
     pred_array = classifier_prediction(df_tis[colFeats], clf, index, scaler, 0)
     print("Finished prediction for Network file : ", network_file)
     df_tis['wt'] = pred_array
-    df_tis.to_csv(output_file, sep="\t", index=False)
+    if output_file is not None:
+        df_tis.to_csv(output_file, sep="\t", index=False)
 
 
 def athaliana_ensemble_predict4(network_file, output_file, tissue_types=None):
@@ -925,7 +1139,7 @@ def athaliana_ensemble_predict4(network_file, output_file, tissue_types=None):
 
     output_image = output_file.split(".")[0]  + ".png"
     print("Features Image :", output_image)
-    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
+    clf, index, scaler, _, _ = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
 
     df_tis  = pd.read_csv(network_file, sep=',')
     df_tis = df_tis.fillna(0)
@@ -933,7 +1147,8 @@ def athaliana_ensemble_predict4(network_file, output_file, tissue_types=None):
     pred_array = classifier_prediction(df_tis[colFeats], clf, index, scaler, 0)
     print("Finished prediction for Network file : ", network_file)
     df_tis['wt'] = pred_array
-    df_tis.to_csv(output_file, sep="\t", index=False)
+    if output_file is not None:
+        df_tis.to_csv(output_file, sep="\t", index=False)
 
 
 def athaliana_ensemble_predict5a(network_file, output_file, tissue_types=None):
@@ -956,7 +1171,7 @@ def athaliana_ensemble_predict5a(network_file, output_file, tissue_types=None):
 
     output_image = output_file.split(".")[0]  + ".png"
     print("Features Image :", output_image)
-    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
+    clf, index, scaler, _, _ = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
 
     df_tis  = pd.read_csv(network_file, sep=',')
     df_tis = df_tis.fillna(0)
@@ -964,7 +1179,8 @@ def athaliana_ensemble_predict5a(network_file, output_file, tissue_types=None):
     pred_array = classifier_prediction(df_tis[colFeats], clf, index, scaler, 0)
     print("Finished prediction for Network file : ", network_file)
     df_tis['wt'] = pred_array
-    df_tis.to_csv(output_file, sep="\t", index=False)
+    if output_file is not None:
+        df_tis.to_csv(output_file, sep="\t", index=False)
 
 def athaliana_ensemble_predict5b(network_file, output_file, tissue_types=None):
     train_dir = 'data/athaliana_raw/'
@@ -986,7 +1202,7 @@ def athaliana_ensemble_predict5b(network_file, output_file, tissue_types=None):
 
     output_image = output_file.split(".")[0]  + ".png"
     print("Features Image :", output_image)
-    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
+    clf, index, scaler, _, _ = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
 
     df_tis  = pd.read_csv(network_file, sep=',')
     df_tis = df_tis.fillna(0)
@@ -994,7 +1210,8 @@ def athaliana_ensemble_predict5b(network_file, output_file, tissue_types=None):
     pred_array = classifier_prediction(df_tis[colFeats], clf, index, scaler, 0)
     print("Finished prediction for Network file : ", network_file)
     df_tis['wt'] = pred_array
-    df_tis.to_csv(output_file, sep="\t", index=False)
+    if output_file is not None:
+        df_tis.to_csv(output_file, sep="\t", index=False)
 
 def athaliana_ensemble_predict6(network_file, output_file, tissue_types=None):
     train_dir = 'data/athaliana_raw/'
@@ -1015,7 +1232,7 @@ def athaliana_ensemble_predict6(network_file, output_file, tissue_types=None):
 
     output_image = output_file.split(".")[0]  + ".png"
     print("Features Image :", output_image)
-    clf, index, scaler = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
+    clf, index, scaler, _, _ = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
 
     df_tis  = pd.read_csv(network_file, sep=',')
     df_tis = df_tis.fillna(0)
@@ -1023,34 +1240,99 @@ def athaliana_ensemble_predict6(network_file, output_file, tissue_types=None):
     pred_array = classifier_prediction(df_tis[colFeats], clf, index, scaler, 0)
     print("Finished prediction for Network file : ", network_file)
     df_tis['wt'] = pred_array
-    df_tis.to_csv(output_file, sep="\t", index=False)
-
-
-def athaliana_integ_predict(network_file, output_file, train_dir, colFeats, output_image):
-    a, df_in, df_out =  athaliana_integ_train(train_dir, colFeats, output_image)
-    clf, index, scaler = a
-    df_tis  = pd.read_csv(network_file, sep=',')
-    df_tis = df_tis.fillna(0)
-    print("Loaded Network file : ", network_file)
-    pred_array = classifier_prediction(df_tis[colFeats], clf, index, scaler, 0)
-    print("Finished prediction for Network file : ", network_file)
-    df_tis = df_tis[['edge']+colFeats]
-    df_tis['wt'] = pred_array
-    df_tis.sort_values(by=['wt'], inplace=True, ascending=False)
-    print(df_tis.columns)
-    if output_file.endswith("tsv"):
-        df_out_file = output_file.replace(".tsv", "_df_out.tsv")
-        df_in_file = output_file.replace(".tsv", "_df_in.tsv")
+    if output_file is not None:
         df_tis.to_csv(output_file, sep="\t", index=False)
-        df_in.to_csv(df_in_file, sep="\t", index=False)
-        df_out.to_csv(df_out_file, sep="\t", index=False)
-    if output_file.endswith("csv"):
-        df_out_file = output_file.replace(".csv", "_df_out.csv")
-        df_in_file = output_file.replace(".csv", "_df_in.csv")
-        df_tis.to_csv(output_file, index=False)
-        df_in.to_csv(df_in_file, index=False)
-        df_out.to_csv(df_out_file, index=False)
 
+
+def athaliana_ensemble_predict7(output_file):
+    train_dir = 'data/athaliana_raw_filtered/'
+    all_types = ['flower', 'leaf', 'root', 'rosette', 'seed', 'seedling1wk',
+                 'seedling2wk', 'shoot', 'wholeplant', 
+                 'chemical', 'nutrients','light','stress-temperature',
+                 'stress-light', 'stress-other', 'stress-pathogen',
+                 'stress-salt-drought', 'development', 
+                 'hormone-aba-iaa-ga-br', 'hormone-ja-sa-ethylene']
+    all_tissue_types = ['flower', 'leaf', 'root', 'rosette', 'seed', 'seedling1wk',
+                 'seedling2wk', 'shoot', 'wholeplant']
+
+    types1 = ['flower']
+    types2 = ['leaf']
+    types3 = ['seedling1wk']
+    types4 = ['flower', 'leaf']
+    types5 = ['flower', 'root']
+    types6 = ['flower', 'seedling1wk']
+
+    colFeats = ['wgcna', 'mrnet', 'clr', 'grnboost', 'tinge', 'aracne']
+    #colFeats = ['clr', 'grnboost']
+    # testing
+    # predicting using the trained params
+
+
+    test_dir = "data/athaliana_raw_filtered/"
+    all_pos_dfs = {x:pd.read_csv(test_dir+x+"-positives.csv") for x in all_tissue_types}
+    all_neg_dfs = {x:pd.read_csv(test_dir+x+"-negatives.csv") for x in all_tissue_types}
+    ##
+    ##
+    all_lst = []
+    for tissue_types_train in [types1, types2, types3, types4, types5, types6]:
+        output_image = output_file.split(".")[0]  + ".png"
+        print("Output Image : ", output_image)
+        clf, index, scaler, _, _ = athaliana_ensemble_train(train_dir, tissue_types_train, colFeats, output_image)
+        tissue_types_test = list(set(all_tissue_types) - set(tissue_types_train))
+        ensemble_dct = { x: 'R' for x in tissue_types_train}
+        for tx in tissue_types_test:
+            pos_df = all_pos_dfs[tx]
+            print(pos_df)
+            pos_df.fillna(0, inplace=True)
+            pos_df['prediction'] = 1
+            neg_df = all_neg_dfs[tx]
+            neg_df.fillna(0, inplace=True)
+            neg_df['prediction'] = 0
+            df_test   = pd.concat([pos_df, neg_df], ignore_index=True)
+            # 
+            print("Tissue : ", tx, len(df_test.columns), len(colFeats), df_test.shape, df_test['prediction'].isna().sum())
+            pred_array, auc = classifier_test(df_test[colFeats], df_test['prediction'],
+                                              clf, index, scaler, 0)
+            print('ENSEMBLE Arabidopsis data AUC = ', auc[0], ' AUPR = ', auc[1])
+            print('individual methods on arabidopsis: [auroc, aupr]')
+            ind_results = individual_method(df_test, colFeats, rankAvg=False, printIt=False)
+            ensemble_compare = True
+            for r in ind_results:
+                #print(r, ind_results[r]<auc[0])
+                ensemble_compare &= ind_results[r][0]<auc[0]
+            print('ENSEMBLE w.', tx, ' better? ', ensemble_compare, '\n')
+            ensemble_dct[tx] = 'Y' if ensemble_compare else 'N'
+        all_lst.append(ensemble_dct)
+    pd.DataFrame(all_lst).to_csv(output_file)
+
+
+
+def athaliana_integ_predict(network_file, output_file,
+                           train_dir, colFeats, output_image,
+                           pos_ratio=0.5, neg_ratio=0.5, scale_pos_weight=None,
+                           random_seed=5):
+    a, df_in, df_out =  athaliana_integ_train(train_dir, colFeats, output_image,
+                                              pos_ratio, neg_ratio, scale_pos_weight,
+                                              random_seed)
+    clf, index, scaler, tauroc, taupr = a
+    if network_file is not None:
+        df_tis  = pd.read_csv(network_file, sep=',')
+        df_tis = df_tis.fillna(0)
+        print("Loaded Network file : ", network_file)
+        pred_array = classifier_prediction(df_tis[colFeats], clf, index, scaler, 0)
+        print("Finished prediction for Network file : ", network_file)
+        df_tis = df_tis[['edge']+colFeats]
+        df_tis['wt'] = pred_array
+        df_tis.sort_values(by=['wt'], inplace=True, ascending=False)
+        return df_tis, df_in, df_out, tauroc, taupr
+    else:
+        return None, df_in, df_out, tauroc, taupr
+
+def athaliana_rankavg_predict(network_file, output_file, train_dir, colFeats):
+    athaliana_rankavg_train(train_dir, colFeats)
+
+def athaliana_unionavg_predict(network_file, output_file, train_dir, unionFeats):
+    athaliana_unionavg_train(train_dir, unionFeats)
 
 def athaliana_integ_predict7(network_file, output_file):
     # network and output file1
@@ -1076,7 +1358,21 @@ def athaliana_integ_predict7(network_file, output_file):
          "stress-temperature-clr","stress-temperature-aracne","stress-temperature-grnboost","stress-temperature-mrnet","stress-temperature-tinge","stress-temperature-wgcna",
          "wholeplant-clr","wholeplant-aracne","wholeplant-grnboost","wholeplant-mrnet","wholeplant-tinge","wholeplant-wgcna"]
     output_image = output_file.split(".")[0]  + ".png"
-    athaliana_integ_predict(network_file, output_file, train_dir, colFeats, output_image)
+    df_tis, df_in, df_out, tauroc, taupr = athaliana_integ_predict(network_file,
+                                output_file, train_dir, colFeats, output_image)
+    if output_file is not None and output_file.endswith("tsv"):
+        df_out_file = output_file.replace(".tsv", "_df_out.tsv")
+        df_in_file = output_file.replace(".tsv", "_df_in.tsv")
+        df_tis.to_csv(output_file, sep="\t", index=False)
+        df_in.to_csv(df_in_file, sep="\t", index=False)
+        df_out.to_csv(df_out_file, sep="\t", index=False)
+    if output_file is not None and output_file.endswith("csv"):
+        df_out_file = output_file.replace(".csv", "_df_out.csv")
+        df_in_file = output_file.replace(".csv", "_df_in.csv")
+        df_tis.to_csv(output_file, index=False)
+        df_in.to_csv(df_in_file, index=False)
+        df_out.to_csv(df_out_file, index=False)
+
 
 def athaliana_integ_predict8(network_file, output_file):
     # network and output file1
@@ -1102,7 +1398,21 @@ def athaliana_integ_predict8(network_file, output_file):
          "stress-temperature-clr","stress-temperature-aracne","stress-temperature-grnboost","stress-temperature-tinge",
          "wholeplant-clr","wholeplant-aracne","wholeplant-grnboost","wholeplant-tinge"]
     output_image = output_file.split(".")[0]  + ".png"
-    athaliana_integ_predict(network_file, output_file, train_dir, colFeats, output_image)
+    df_tis, df_in, df_out, tauroc, taupr = athaliana_integ_predict(network_file,
+                                output_file, train_dir, colFeats, output_image)
+    if output_file is not None and output_file.endswith("tsv"):
+        df_out_file = output_file.replace(".tsv", "_df_out.tsv")
+        df_in_file = output_file.replace(".tsv", "_df_in.tsv")
+        df_tis.to_csv(output_file, sep="\t", index=False)
+        df_in.to_csv(df_in_file, sep="\t", index=False)
+        df_out.to_csv(df_out_file, sep="\t", index=False)
+    if output_file is not None and output_file.endswith("csv"):
+        df_out_file = output_file.replace(".csv", "_df_out.csv")
+        df_in_file = output_file.replace(".csv", "_df_in.csv")
+        df_tis.to_csv(output_file, index=False)
+        df_in.to_csv(df_in_file, index=False)
+        df_out.to_csv(df_out_file, index=False)
+
 
 
 def athaliana_integ_predict9(network_file, output_file):
@@ -1129,24 +1439,176 @@ def athaliana_integ_predict9(network_file, output_file):
          "stress-temperature-clr","stress-temperature-grnboost",
          "wholeplant-clr","wholeplant-grnboost"]
     output_image = output_file.split(".")[0]  + ".png"
-    athaliana_integ_predict(network_file, output_file, train_dir, colFeats, output_image)
+    df_tis, df_in, df_out, tauroc, taupr = athaliana_integ_predict(network_file,
+                                output_file, train_dir, colFeats, output_image)
+    if output_file is not None and output_file.endswith("tsv"):
+        df_out_file = output_file.replace(".tsv", "_df_out.tsv")
+        df_in_file = output_file.replace(".tsv", "_df_in.tsv")
+        df_tis.to_csv(output_file, sep="\t", index=False)
+        df_in.to_csv(df_in_file, sep="\t", index=False)
+        df_out.to_csv(df_out_file, sep="\t", index=False)
+    if output_file is not None and output_file.endswith("csv"):
+        df_out_file = output_file.replace(".csv", "_df_out.csv")
+        df_in_file = output_file.replace(".csv", "_df_in.csv")
+        df_tis.to_csv(output_file, index=False)
+        df_in.to_csv(df_in_file, index=False)
+        df_out.to_csv(df_out_file, index=False)
 
 
+def athaliana_integ_predict10(network_file, output_file, options_file):
+    # network and output file1
+    train_dir = 'data/athaliana_raw/'
+    with open(options_file) as jfptr:
+        jsx = json.load(jfptr)
+    output_image = jsx["OUTPUT_FILE"].split(".")[0]  + ".png"
+    pos_range = jsx["POS_RANGE"]
+    neg_range = jsx["NEG_RANGE"]
+    ropt = [(p, q, None) for p in pos_range for q in neg_range]
+    for p in jsx["POS_RANGE"]:
+        for q in jsx["NEG_RANGE"]:
+            for r in  jsx["POS_WEIGHT_RANGE"]:
+                ropt.append((float(p), float(q), float(r))) 
+    colFeats = jsx["COL_FEATS"]
+    if ("RANDOM_SEED" in jsx) and jsx["RANDOM_SEED"] == "None":
+        print("Random seed is None")
+        random_seed = None
+    else:
+        random_seed = 5
+    #print(ropt)
+    oelts = ["TP-FP", "PCT POS. INCL.", "PCT NEG INCL.",
+             "SCALE POS WT", "NUM EDGES",
+             "TOTAL EDGES", "TRAIN SET",  "AUROC", "AUPR", "TEST SET",
+             "TRAIN POSITIVES", "TRAIN NEGATIVES",
+             "TRAIN TP", "TEST TP", "TOTAL TP",
+             "TEST FP", "TRAIN FP", "TOTAL FP"]
+    print("\t".join([str(x) for x in oelts]))
+    for p,q,r in ropt:
+        pos_ratio = float(p)
+        neg_ratio = float(q)
+        scale_pos_weight = r if r is None else float(r)
+        df_tis, df_in, df_out, tauroc, taupr = athaliana_integ_predict(network_file, output_file,
+                                        train_dir, colFeats, output_image,
+                                        pos_ratio, neg_ratio, scale_pos_weight)
+        for nx in jsx["OUT_EDGES"]: 
+            df_wt = df_tis[['edge', 'wt']].head(n=int(nx))
+            df_in_edge = pd.merge(df_in[['edge', 'prediction']], df_wt, how='inner', on=['edge'])
+            df_out_edge = pd.merge(df_out[['edge', 'prediction']], df_wt, how='inner', on=['edge'])
+            in_tp = df_in_edge.loc[df_in_edge.prediction == 1].shape[0]
+            out_tp = df_out_edge.loc[df_out_edge.prediction == 1].shape[0]
+            in_fp = df_in_edge.loc[df_in_edge.prediction == 0].shape[0]
+            out_fp = df_out_edge.loc[df_out_edge.prediction == 0].shape[0]
+            tp = in_tp + out_tp
+            fp = in_fp + out_fp
+            oelts = ["TP-FP", pos_ratio*100, neg_ratio*100, 
+                     None if scale_pos_weight is None else scale_pos_weight,
+                     nx, df_tis.shape[0], df_in.shape[0], tauroc, taupr,
+                     df_out.shape[0],
+                     df_in.loc[df_in.prediction == 1].shape[0],
+                     df_in.loc[df_in.prediction == 0].shape[0],
+                     df_out.loc[df_out.prediction == 1].shape[0],
+                     df_out.loc[df_out.prediction == 0].shape[0],
+                     in_tp, out_tp, tp,  in_fp, out_fp, fp]
+            print("\t".join([str(x) for x in oelts]))
+
+
+def athaliana_integ_predict11(network_file, output_file, options_file):
+    # network and output file1
+    train_dir = 'data/athaliana_raw/'
+    with open(options_file) as jfptr:
+        jsx = json.load(jfptr)
+    output_image = jsx["OUTPUT_FILE"].split(".")[0]  + ".png"
+    colFeats = jsx["COL_FEATS"]
+    athaliana_rankavg_predict(network_file, output_file, train_dir, colFeats)
+
+def athaliana_integ_predict12(network_file, output_file, options_file):
+    train_dir = 'data/athaliana_raw/'
+    with open(options_file) as jfptr:
+        jsx = json.load(jfptr)
+    output_image = jsx["OUTPUT_FILE"].split(".")[0]  + ".png"
+    unionFeats = jsx["UNION_FEATS"]
+    athaliana_unionavg_predict(network_file, output_file, train_dir, unionFeats)
+
+
+def athaliana_integ_predict15(network_file, output_file, options_file):
+    # network and output file1
+    train_dir = 'data/athaliana_raw/'
+    with open(options_file) as jfptr:
+        jsx = json.load(jfptr)
+    output_image = jsx["OUTPUT_FILE"].split(".")[0]  + ".png"
+    pos_range = jsx["POS_RANGE"]
+    neg_range = jsx["NEG_RANGE"]
+    ropt = [(p, q, None) for p in pos_range for q in neg_range]
+    for p in jsx["POS_RANGE"]:
+        for q in jsx["NEG_RANGE"]:
+            for r in  jsx["POS_WEIGHT_RANGE"]:
+                ropt.append((float(p), float(q), float(r))) 
+    colFeats = jsx["COL_FEATS"]
+    if ("RANDOM_SEED" in jsx) and jsx["RANDOM_SEED"] == "None":
+        print("Random seed is None")
+        random_seed = None
+    else:
+        random_seed = 5
+    if ("NROUNDS" in jsx):
+        nrounds = int(jsx["NROUNDS"])
+    #print(ropt)
+    oelts = ["TP-FP", "PCT POS. INCL.", "PCT NEG INCL.",
+             "SCALE POS WT",  "TRAIN SET",  "AUROC", "AUPR", "TEST SET",
+             "TRAIN POSITIVES", "TRAIN NEGATIVES"]
+    print("\t".join([str(x) for x in oelts]))
+    for p,q,r in ropt:
+        pos_ratio = float(p)
+        neg_ratio = float(q)
+        scale_pos_weight = r if r is None else float(r)
+        aupr_lst = [0.0 for _ in range(nrounds)]
+        auroc_lst = [0.0 for _ in range(nrounds)]
+        for i in range(nrounds):
+            _, df_in, df_out, tauroc, taupr = athaliana_integ_predict(None, output_file,
+                                          train_dir, colFeats, output_image,
+                                          pos_ratio, neg_ratio, scale_pos_weight,
+                                          random_seed)
+            aupr_lst[i] = taupr
+            auroc_lst[i] = tauroc
+            oelts = ["TP-FP", pos_ratio*100, neg_ratio*100, 
+                  None if scale_pos_weight is None else scale_pos_weight,
+                  df_in.shape[0], tauroc, taupr,
+                  df_out.shape[0],
+                  df_in.loc[df_in.prediction == 1].shape[0],
+                  df_in.loc[df_in.prediction == 0].shape[0],
+                  df_out.loc[df_out.prediction == 1].shape[0],
+                  df_out.loc[df_out.prediction == 0].shape[0]]
+            print("\t".join([str(x) for x in oelts]))
+        oelts = ["TP-FP-AVG", pos_ratio*100, neg_ratio*100, 
+                  None if scale_pos_weight is None else scale_pos_weight,
+                  "-", 
+                  str(np.mean(auroc_lst)) + "+/-" + str(np.std(auroc_lst)), 
+                  str(np.mean(aupr_lst)) + "+/-" + str(np.std(aupr_lst)),
+                  "-",
+                  "-", 
+                  "-",
+                  "-",
+                  "-"]
+        print("\t".join([str(x) for x in oelts]))
+
+
+ 
 if __name__ == "__main__":
     PROG_DESC = """Train with a subset of network and predit output """
     PARSER = argparse.ArgumentParser(description=PROG_DESC)
-    PARSER.add_argument("network_file", 
+    PARSER.add_argument("run_type", help=""" Run Type""")
+    PARSER.add_argument("-n", "--network_file",
+                        default="edge_networks/union-all-networks.csv",
                         help="""network build from a reverse engineering methods
                                 (currenlty supported: eda, adj, tsv)""")
-    PARSER.add_argument("output_file",
+    PARSER.add_argument("-o", "--output_file", default=None,
                         help="""Output File""")
-    PARSER.add_argument("run_type",
-                        help=""" Run Type""")
+    PARSER.add_argument("-p", "--options_file", default=None,
+                        help="""Options File""")
     ARGS = PARSER.parse_args()
     run_type = ARGS.run_type
     print("Network file : ", ARGS.network_file)
-    print("Output file : ", ARGS.output_file)
     print("Run type : ",  run_type)
+    print("Output file : ", ARGS.output_file)
+    print("Options file : ", ARGS.options_file)
     if run_type == '1':
         athaliana_ensemble_predict1(ARGS.network_file, ARGS.output_file)
     elif run_type == '2':
@@ -1162,11 +1624,32 @@ if __name__ == "__main__":
     elif run_type == '6':
         athaliana_ensemble_predict6(ARGS.network_file, ARGS.output_file)
     elif run_type == '7':
+        # Integration prediction with all methods
         athaliana_integ_predict7(ARGS.network_file, ARGS.output_file)
     elif run_type == '8':
+        # Integration prediction with top 4 methods
         athaliana_integ_predict8(ARGS.network_file, ARGS.output_file)
     elif run_type == '9':
+        # Integration prediction with top 2 methods
         athaliana_integ_predict9(ARGS.network_file, ARGS.output_file)
+    elif run_type == '10':
+        # Grid Integration prediction with all methods
+        athaliana_integ_predict10(ARGS.network_file, ARGS.output_file, ARGS.options_file)
+    elif run_type == '11':
+        # Rank avg. prediction with all methods
+        athaliana_integ_predict11(ARGS.network_file, ARGS.output_file, ARGS.options_file)
+    elif run_type == '12':
+        # Rank avg. after union of all methods
+        athaliana_integ_predict12(ARGS.network_file, ARGS.output_file, ARGS.options_file)
+    elif run_type == '13':
+        analysis_data_v3_xgboost()
+    elif run_type == '14':
+        analysis_data_v4_xgboost()
+    elif run_type == '15':
+        # Grid Integration prediction with mutliple rounds
+        athaliana_integ_predict15(ARGS.network_file, ARGS.output_file, ARGS.options_file)
+    elif run_type == '16':
+        athaliana_ensemble_predict7(ARGS.output_file)
     else:
         print("Invalid arguments")
 
