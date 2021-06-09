@@ -456,6 +456,7 @@ def scalelsum_stats(df, colFeats):
 
 def runScaleLSum(allOnes, allZeros, methods):
     adf = pd.concat([allOnes, allZeros])
+    adf.fillna(0)
     adf[['s', 't']] = adf['edge'].str.split('-', expand=True)
     ax1 = adf[methods+['s']].rename(columns={'s':'node'})
     ax2 = adf[methods+['t']].rename(columns={'t':'node'})
@@ -476,6 +477,9 @@ def runScaleLSum(allOnes, allZeros, methods):
     ex2 = e2 **2
     sx1 = np.sqrt(ex1 + ex2)
     adf['scaleLSum'] =sx1.sum(axis=1)
+    adf['scaleLSum'].replace(np.inf, 0, inplace=True)
+    adf['scaleLSum'].replace(-np.inf, 0, inplace=True)
+    print(adf, adf['prediction'].isna().sum(),np.isinf(adf['scaleLSum']).sum())
     return get_auc(adf['prediction'], adf['scaleLSum'])
 
 
@@ -564,28 +568,16 @@ def pandas_classifier(df_train, df_test, runXGB, colFeats,
 
 def load_v3_dataset():
     # In[6]:
-
     df = pd.read_csv('data/yeast-edge-weights-v3.csv', sep=',')
-
-
     # In[7]:
-
-
     # dropping pcc as not present for test arabidopsis
     del df['pcc']
     # del df['grnboost']
-
-
     # In[8]:
-
-
     # for c in df.columns:
     #     print(c, df[c].value_counts())
     df['prediction'].value_counts()
-
-
     # In[9]:
-
     allOnes = df[df['prediction']==1]
     allZeros = df[df['prediction']==0]
     numOnes = len(allOnes)
@@ -597,13 +589,34 @@ def load_v3_dataset():
     # evenly divide the ones among train/test
     df_train = pd.concat([allOnes[:numOnes//2], allZeros[:trainPTS]], ignore_index=True)
     df_test = pd.concat([allOnes[numOnes//2:], allZeros[trainPTS: trainPTS+testPTS]], ignore_index=True)
-
     return(df_train, df_test)
 
 
 def load_v4_dataset():
     # In[6]:
     df = pd.read_csv('data/yeast-edge-weights-v4.csv', sep=',')
+    del df['pcc']
+    # del df['grnboost']
+    # for c in df.columns:
+    #     print(c, df[c].value_counts())
+    df['prediction'].value_counts()
+    #
+    allOnes = df[df['prediction']==1]
+    allZeros = df[df['prediction']==0]
+    numOnes = len(allOnes)
+    numZeros = len(allZeros)
+    trainPTS = 20000 # train + valid
+    testPTS = 200000 # test
+    # choose 20K points for training
+    # Randomly choose 200K points for testing
+    # evenly divide the ones among train/test
+    df_train = pd.concat([allOnes[:numOnes//2], allZeros[:trainPTS]], ignore_index=True)
+    df_test = pd.concat([allOnes[numOnes//2:], allZeros[trainPTS: trainPTS+testPTS]], ignore_index=True)
+    return (df_train, df_test, allOnes, allZeros)
+
+def load_v5_dataset():
+    # In[6]:
+    df = pd.read_csv('data/yeast-edge-weights-v5.csv', sep=',')
     del df['pcc']
     # del df['grnboost']
     # for c in df.columns:
@@ -651,6 +664,8 @@ def analysis_data_v4_xgboost():
     print("Loaded v4 dataset ")
     print(df_train.head())
     print(df_test.head())
+    df_train.fillna(0)
+    df_test.fillna(0)
     output_image="v4-analysis.png"
     colFeats = [c for c in df_train.columns if c not in ['prediction', 'edge']]
     trained_params = pandas_classifier(df_train, df_test, 1, colFeats, output_image)
@@ -673,6 +688,36 @@ def analysis_data_v4_xgboost():
     print('scaleLSum Top 7 :', runScaleLSum(allOnes, allZeros, colFeats3))
     print('scaleSum  Top 7 :', runScaleSum(allOnes, allZeros, colFeats3))
     print('******************************************************************')
+
+def analysis_data_v5_xgboost():
+    df_train, df_test, allOnes, allZeros = load_v5_dataset()
+    print("Loaded v4 dataset ")
+    print(df_train.head())
+    print(df_test.head())
+    output_image="v4-analysis.png"
+    colFeats = [c for c in df_train.columns if c not in ['prediction', 'edge']]
+    trained_params = pandas_classifier(df_train, df_test, 1, colFeats, output_image)
+    print('******************** Indiv. methods on Test **********************')
+    individual_method(df_test, colFeats, rankAvg=True)
+    print('scaleSum  on Test :', runScaleSum(allOnes, allZeros, colFeats))
+    print('scaleLSum on Test :', runScaleLSum(allOnes, allZeros, colFeats))
+    print('******************************************************************')
+    colFeats2 = ["clr", "grnboost", "aracne", "mrnet", "tinge", "wgcna"]
+    trained_params2 = pandas_classifier(df_train, df_test, 1, colFeats2, output_image)
+    print('******************* Indiv. methods on Top 6 **********************')
+    individual_method(df_test, colFeats2, rankAvg=True)
+    print('scaleLSum Top 6 :', runScaleLSum(allOnes, allZeros, colFeats2))
+    print('scaleSum  Top 6 :', runScaleSum(allOnes, allZeros, colFeats2))
+    print('******************************************************************')
+    colFeats3 = ["clr", "grnboost", "aracne", "mrnet", "tinge", "wgcna", "genie3"]
+    trained_params3 = pandas_classifier(df_train, df_test, 1, colFeats3, output_image)
+    print('******************* Indiv. methods on Top 7 **********************')
+    individual_method(df_test, colFeats3, rankAvg=True)
+    print('scaleLSum Top 7 :', runScaleLSum(allOnes, allZeros, colFeats3))
+    print('scaleSum  Top 7 :', runScaleSum(allOnes, allZeros, colFeats3))
+    print('******************************************************************')
+
+
 
 def analysis_data_v3_xgboost():
     df_train, df_test = load_v3_dataset()
@@ -904,7 +949,7 @@ def athaliana_unionavg_train(train_dir, union_feats):
 
 def avgrank_stats(df, colFeats):
     df_tis = df[colFeats + ["prediction"]]
-    df_tis.wt = 1/df_tis.rank(ascending=False).mean(axis=1)
+    df_tis.wt = 1/df_tis[colFeats].rank(ascending=False).mean(axis=1)
     aupr = metrics.average_precision_score(df_tis.prediction, df_tis.wt)
     auroc = metrics.roc_auc_score(df_tis.prediction, df_tis.wt)
     return auroc, aupr
@@ -926,11 +971,16 @@ def athaliana_rankavg_train(train_dir, colFeats):
     print("all-avergrank", len(colFeats), auroc, aupr)
     auroc, aupr = scalesum_stats(df_tis, colFeats)
     print("all-scalelsum", len(colFeats), auroc, aupr)
-    methods = ["clr", "grnboost", "tinge", "aracne", "mrnet", "wgcna"]
-    for x in methods:
+    methods = ["aracne", "clr", "grnboost", "mrnet", "tinge", "wgcna"]
+    labels = ["ARACNe-AP", "CLR", "GRNBoost", "MRNET", "TINGe", "WGCNA"]
+    for x,z in zip(methods, labels):
         xfeats = [y for y in colFeats if y.endswith(x)]
         auroc, aupr = avgrank_stats(df_tis, xfeats)
-        print(x, len(xfeats), auroc, aupr)
+        print(" & ".join(str(r) for r in [z+ " Rank Avg.", len(xfeats), round(auroc, 4), round(aupr, 4)]))
+    for x,z in zip(methods, labels):
+        xfeats = [y for y in colFeats if y.endswith(x)]
+        auroc, aupr = scalesum_stats(df_tis, xfeats)
+        print(" & ".join(str(r) for r in [z+ "\\textit{ScaleSum}", len(xfeats), round(auroc, 4), round(aupr, 4)]))
  
 
 def athaliana_integ_train(train_dir, colFeats, output_image,
@@ -1645,6 +1695,8 @@ if __name__ == "__main__":
         analysis_data_v3_xgboost()
     elif run_type == '14':
         analysis_data_v4_xgboost()
+    elif run_type == '14b':
+        analysis_data_v5_xgboost()
     elif run_type == '15':
         # Grid Integration prediction with mutliple rounds
         athaliana_integ_predict15(ARGS.network_file, ARGS.output_file, ARGS.options_file)
