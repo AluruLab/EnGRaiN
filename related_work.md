@@ -8,19 +8,16 @@
 2. Paper(Bioinformatics, 2010) : Revealing differences in gene network inference algorithms on the network level by ensemble methods. Paper: https://doi.org/10.1093/bioinformatics/btq259
 	- Ensemble of datasets
 	- generate E = 300 different datasets for sample size 200 and another E = 300 datasets for sample size 20 using the same subnetwork : this is what is called ensemble of datasets
-	- optimal cutoff value for each dataset, Di, used to declare edges significant is obtained by maximizing the F-score,
+	- Optimal cutoff value for each dataset, Di, used to declare edges significant is obtained by maximizing the F-score,
 	- This results in E different F-scores, correspondingly E inferred networks
 	- The rest of the paper analyses the newtork properties : histogram etc of the 600 x 4 (methods) networks.
- 
 
 3. Paper(PLOS) : Ensemble methods for stochastic networks with special reference to the biological clock of Neurospora crass. URL: https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0196435
    - This is stochastic clock network, not gene network.
 
-4. Citations of (2): https://scholar.google.com/scholar?hl=en&as_sdt=0,11&sciodt=0,11&cites=7541323724345330946&scipsc=
-	
-5. Netbenchmark: https://link.springer.com/article/10.1186/s12859-015-0728-4 
+4. Netbenchmark: https://link.springer.com/article/10.1186/s12859-015-0728-4 
 
-6. Paper(IEEE SSCI 2015): Study of Normalization and Aggregation Approaches for Consensus Network Estimation. URL: https://ieeexplore.ieee.org/abstract/document/7376731
+5. Paper(IEEE SSCI 2015): Study of Normalization and Aggregation Approaches for Consensus Network Estimation. URL: https://ieeexplore.ieee.org/abstract/document/7376731
 	- Methods: RankSum, TopKNet,
 	- Methods: Normalize and aggregate: 
     - Normalization methods:
@@ -40,8 +37,8 @@
 	- use the Area Under Precision Recall (AUPR) but we do not evaluate the whole network and only take into account the most confident edges... In order to have statistically significant measures, we choose to evaluate the 20% highest confidence edges as is done in[8], obtaining the AUPR20 measure
 	- We use five different TrueNet networks to evaluate the consensus algorithms, that are generated with three different GRN simulators: GNW simulator [15], SynTReN simulator [16] and Rogers.  
 	- In the homogeneous case, it can be concluded that consensus network algorithms allow to improve the inference. this case almost shows no significant differences between methods, we think that the best option is to use the RankSum or IdSum
-	- in the Heterogeneous scenario, we observe large differences between different consensus proposals, where some of them reach worst results compared to the average individual network
-	- we can confirm that the IdSum method that was used in[11] in a Heterogeneous scenario is a good choice for this case. But, using the ScaleL as normalization step and Sum as aggregation step provides even better results
+	- In the Heterogeneous scenario, we observe large differences between different consensus proposals, where some of them reach worst results compared to the average individual network
+	- We can confirm that the IdSum method that was used in[11] in a Heterogeneous scenario is a good choice for this case. But, using the ScaleL as normalization step and Sum as aggregation step provides even better results
 
 7. Paper (GRN Book chapter 2018; most relevant) : Unsupervised GRN Ensemble. Paper: https://link.springer.com/protocol/10.1007/978-1-4939-8882-2_12. Schihub link : https://sci-hub.se/10.1007/978-1-4939-8882-2_12#
 	- Sort of a Journal version of the SSCI conf. paper.
