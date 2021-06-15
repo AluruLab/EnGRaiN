@@ -1,0 +1,13 @@
+{
+    "OUT_PREFIX" : "sim2k/yeast2k",
+    "INPUT_FILES": {
+      "250"  : "../data/yeast-edges-weights-2000.250.csv",
+      "500"  : "../data/yeast-edges-weights-2000.500.csv",
+      "750"  : "../data/yeast-edges-weights-2000.750.csv",
+      "1000" : "../data/yeast-edges-weights-2000.1000.csv",
+      "1250" : "../data/yeast-edges-weights-2000.1250.csv",
+      "1500" : "../data/yeast-edges-weights-2000.1500.csv",
+      "1750" : "../data/yeast-edges-weights-2000.1750.csv",
+      "2000" : "../data/yeast-edges-weights-2000.2000.csv"
+    }
+}
