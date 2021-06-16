@@ -23,7 +23,7 @@ The libraries can be installed via `pip` or `conda`.
 
 EnGRaiN script
 ----
-The source code for EnGRaiN is made available as a python script engrain_ensemble.py 
+The source code for EnGRaiN is made available as `engrain_ensemble.py` python script
 in the src/ folder of this reporsitory. This script has the following usage.
 
     python src/engrain_ensemble.py -h 
@@ -56,10 +56,11 @@ in the src/ folder of this reporsitory. This script has the following usage.
 Simulated Dataset Runs
 ---
 
-We demonstrate the effectiveness of \engrain{} using simulated datasets in our paper.
-The smaller simulated datsets are made available in the data/ directory of this 
+In our paper, we demonstrate the effectiveness of \engrain{} using simulated datasets.
+The smaller networks from simulated datsets are made available in the data/ directory of this 
 reporsitory.
-The larget datasets used in the paper can be downloaded with links provided  in data/README.md .
+The larger networks from simulated datasets that are used in the paper can be downloaded 
+via the links provided  in data/README.md file.
 The EnGRaiN script requires a JSON input file with the required input configurations.
 The input configurations for these runs are present in results/config folder. 
 To run the latest version of the simulated analysis:
