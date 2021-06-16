@@ -38,9 +38,33 @@ where sft is generated based on scale-free topology.
 For real networks, we use WGCNA values instead of PCC.
 
 
+yeast-edge-weights-v4 & yeast-edge-weights-v5
+---
+Both similar format to v3 with different features. 
+Both can be downloaded  from the followng links:
+
+[yeast-edge-weights-v4.csv.gz](https://www.dropbox.com/s/gxv6ksnbk601wwm/yeast-edge-weights-v4.csv.gz?dl=0)
+-- includes  the features clr, aracne, grnboost, mrnet, tinge, wgcna, fastggm, genenet, tigress, genie3, and inferelator.
+
+[yeast-edge-weights-v5.csv.gz](https://www.dropbox.com/s/c7rhjs75oek1wia/yeast-edge-weights-v5.csv.gz?dl=0) 
+-- includes  the features clr, aracne, grnboost, mrnet, tinge, wgcna, fastggm, genenet, tigress, genie3, inferelator, and irafnet.
 
 arabidopsis networks from real datasets
 ========================
+
+athaliana_ref_positives.csv
+--------------------------------
+
+Positive edges in true network that are found in the arabidopsis network.
+
+athaliana_ref_negatives.csv
+---------------------------------
+
+Negative edges in true network that are found in the arabidopsis network.
+
+
+
+
 
 athaliana_raw/ and athaliana_raw2/ folders
 ---
