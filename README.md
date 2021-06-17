@@ -87,5 +87,5 @@ TODO: datsets
 Other Software related to the Paper
 ----
 1. The scripts for Microarray data processing workflow are available in the github repo [srirampc/tanyard](https://github.com/srirampc/tanyard).
-2. The source code for the containers and aggregation scripts for simulated runs are in the github repo [srirampc/ardmore](https:/github.com/srirampc/ardmore).
+2. The source code for the containers and aggregation scripts for simulated runs are in the github repo [srirampc/ardmore](https://github.com/srirampc/ardmore).
 
