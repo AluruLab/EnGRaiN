@@ -77,4 +77,15 @@ To evaluate EnGRaiN, we also used a curated collection of \textit{A. thaliana}
 datasets, that we created from microarray datasets available from 
 public repositories.
 
-TODO::
+Tissue-specific Network data used for evaluation are available at the data/athaliana_raw directory. 
+Note that this includes only the scores for positives and negatives.
+AUROC/AUPR can be computed using this data with the help of the input config files 
+in the runs/ens_grid_search directory.
+
+TODO: datsets 
+
+Other Software related to the Paper
+----
+1. The scripts for Microarray data processing workflow are available in the github repo [srirampc/tanyard](https://github.com/srirampc/tanyard).
+2. The source code for the containers and aggregation scripts for simulated runs are in the github repo [srirampc/ardmore](https:/github.com/srirampc/ardmore).
+
