@@ -82,10 +82,14 @@ Note that this includes only the scores for positives and negatives.
 AUROC/AUPR can be computed using this data with the help of the input config files 
 in the runs/ens_grid_search directory.
 
-TODO: datsets 
+The final Arabidopsis Ensemble network is available [here](https://www.dropbox.com/s/8fu4i5q8ynmpxu6/EnGRaiN-Athaliana-Ensemble.zip?dl=0).
 
-Other Software related to the Paper
+
+Runs on Simulated Data  
 ----
-1. The scripts for Microarray data processing workflow are available in the github repo [srirampc/tanyard](https://github.com/srirampc/tanyard).
-2. The source code for the containers and aggregation scripts for simulated runs are in the github repo [srirampc/ardmore](https:/github.com/srirampc/ardmore).
+The source code for the containers and aggregation scripts for simulated runs are in the github repo [srirampc/ardmore](https:/github.com/srirampc/ardmore).
+
+Microarray Data Processing  
+----
+The scripts for Microarray data processing workflow are available in the github repo [srirampc/tanyard](https://github.com/srirampc/tanyard).
 
