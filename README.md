@@ -82,7 +82,7 @@ Note that this includes only the scores for positives and negatives.
 AUROC/AUPR can be computed using this data with the help of the input config files 
 in the runs/ens_grid_search directory.
 
-The final Arabidopsis Ensemble network is available [here](https://www.dropbox.com/s/8fu4i5q8ynmpxu6/EnGRaiN-Athaliana-Ensemble.zip?dl=0).
+The final Arabidopsis Ensemble network constructed using EnGRain can be downloaded from [here](https://www.dropbox.com/s/8fu4i5q8ynmpxu6/EnGRaiN-Athaliana-Ensemble.zip?dl=0).
 
 
 Runs on Simulated Data  
