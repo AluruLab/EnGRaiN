@@ -12,12 +12,11 @@ Dependencies
 EnGRaiN requires python v 3.1 or above and depends upon the following python 
 libraries:
 
-  - pandas 
-  - json
   - numpy 
   - matplotlib 
-  - xgboost 
+  - pandas 
   - sklearn
+  - xgboost 
 
 The libraries can be installed via `pip` or `conda`.
 
@@ -62,18 +61,18 @@ The larger networks from simulated datasets that are used in the paper can be do
 
 
 The EnGRaiN script requires a JSON input file with the required input configurations.
-The input configurations for these runs are present in results/config folder. 
+The input configurations for the results shown in the paper are available in results/config folder. 
 
 
 To run the latest version of the simulated analysis:
 
 1. `cd` to the results folder.
-2. Link the data direcotry : `ln -s ../data/`
+2. Link the data directory : `ln -s ../data/`
 3. Download the [yeast-edge-weights-v5.csv.gz](https://www.dropbox.com/s/c7rhjs75oek1wia/yeast-edge-weights-v5.csv.gz?dl=0)  dataset to the `data` folder.
 4. Run the command `python engrain_ensemble.py sim v5`.
 5. AUROC/AUPR Output will generated as a table in the standard output.
 
-A. thaliana Dataset Runs
+A. thaliana Dataset Runs and Networks
 ---
 To evaluate EnGRaiN, we also used a curated collection of \textit{A. thaliana} 
 datasets, that we created from microarray datasets available from 
