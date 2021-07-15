@@ -88,9 +88,9 @@ The final Arabidopsis Ensemble network constructed using EnGRain can be download
 
 Runs on Simulated Data  
 ----
-The source code for the containers and aggregation scripts for simulated runs are in the github repo [srirampc/ardmore](https://github.com/srirampc/ardmore).
+The source code for the containers and aggregation scripts for simulated runs are in the github repo [AluruLab/ardmore](https://github.com/AluruLab/ardmore).
 
 Microarray Data Processing  
 ----
-The scripts for Microarray data processing workflow are available in the github repo [srirampc/tanyard](https://github.com/srirampc/tanyard).
+The scripts for Microarray data processing workflow are available in the github repo [AluruLab/tanyard](https://github.com/AluruLab/tanyard).
 
