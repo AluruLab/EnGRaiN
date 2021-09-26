@@ -7,33 +7,37 @@ import matplotlib.pyplot as plt
 import xgboost as xgb
 import random
 import operator, itertools
+#
+#
+from collections import Counter
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.ticker import NullFormatter
 ##
 from pandas import ExcelWriter
 from pandas import ExcelFile
 ##
 from sklearn import svm
 from sklearn import manifold
-from sklearn.model_selection import train_test_split
 from sklearn import metrics
+from sklearn import model_selection
+from sklearn.decomposition import PCA
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.linear_model import SGDClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.manifold import TSNE
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold
+from sklearn.neural_network import MLPClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.manifold import TSNE
-from sklearn import model_selection
-from sklearn.model_selection import KFold
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import confusion_matrix
+from sklearn.svm import SVC
 #
-from collections import Counter
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib.ticker import NullFormatter
-
 import warnings
 warnings.filterwarnings("ignore")
 #
@@ -301,7 +305,7 @@ def individual_method(data, methods, rank_avg=False, print_rocpr=True):
     return results
 
 
-def classifier_train(X, y, Xtest, ytest, colFeats,
+def xgb_train(X, y, Xtest, ytest, colFeats,
         output_image=None, scale_pos_weight=None, 
         pca_comp = False): # pca = 0 means no PCA applied
     # print("Normalising the input data...")
@@ -321,24 +325,79 @@ def classifier_train(X, y, Xtest, ytest, colFeats,
                    colFeats, output_image, scale_pos_weight)
     return scaler, pca, clf
 
+def ml_train(X, y, colFeats, method, output_image=None,  pca_comp = False): 
+    # pca = False means no PCA applied
+    #print("ML T: ", X.shape)
+    scaler = StandardScaler() #MinMaxScaler() #StandardScaler()
+    scaler.fit(X)
+    scaledX = scaler.transform(X)
+    if pca_comp is True:
+        pca = PCA(n_components = pca_comp)
+        pca.fit(scaledX)
+        pca_scaledX = pca.transform(scaledX)
+    else:
+        pca_scaledX = scaledX
+        pca = None
+    clf = None
+    if method == 'rf':
+        clf =  RandomForestClassifier(max_depth=5, n_estimators=10, 
+                                      max_features=1)
+        clf.fit(pca_scaledX, y)
+    elif method == 'svc':
+        clf = SVC()
+        clf.fit(pca_scaledX, y)
+    elif method == 'mlp':
+        clf = MLPClassifier(alpha=1, max_iter=1000,
+                            solver='lbfgs', hidden_layer_sizes=(12,))
+        clf.fit(pca_scaledX, y)
+    elif method == 'sgd':
+        clf = SGDClassifier(alpha=1e-5)
+        clf.fit(pca_scaledX, y)
+    return scaler, pca, clf
+ 
+def classifier_train(X, y, Xtest, ytest, colFeats,
+        output_image=None, scale_pos_weight=None, 
+        pca_comp = False, method='xgb'): # pca = 0 means no PCA applied
+    if method in ['svc', 'rf', 'mlp', 'sgd']:
+        return ml_train(X, y, colFeats, method, output_image, pca_comp)
+    else:
+        return xgb_train(X, y, Xtest, ytest, colFeats, output_image,
+                         scale_pos_weight, pca_comp)
 
-def classifier_prediction(X, clf, scaler, pca):
+def classifier_prediction(X, clf, scaler, pca, method):
     scaledX = scaler.transform(X)
     pca_scaledX = scaledX
     if pca is not None:
         pca_scaledX = pca.transform(scaledX)
-    pca_scaledXG = xgb.DMatrix(pca_scaledX)
-    pred_array = clf.predict(pca_scaledXG, ntree_limit=clf.best_iteration)
+    if method == 'xgb':
+        pca_scaledXG = xgb.DMatrix(pca_scaledX)
+        pred_array = clf.predict(pca_scaledXG, ntree_limit=clf.best_iteration)
+    else:
+        if hasattr(clf, "decision_function"):
+            pred_array = clf.decision_function(pca_scaledX)
+        else:
+            pred_array = clf.predict_proba(pca_scaledX)
+        if len(pred_array.shape) > 1 and pred_array.shape[1] == 2:
+            pred_array = pred_array[:,1]
     return pred_array
 
 
-def classifier_test(X, y, clf, scaler, pca):
+def classifier_test(X, y, clf, scaler, pca, method):
     scaledX = scaler.transform(X)
     pca_scaledX = scaledX
     if pca is not None:
         pca_scaledX = pca.transform(scaledX)
-    pca_scaledXG = xgb.DMatrix(pca_scaledX, label=y)
-    pred_array = clf.predict(pca_scaledXG, ntree_limit=clf.best_iteration)
+    if method == 'xgb':
+        pca_scaledXG = xgb.DMatrix(pca_scaledX, label=y)
+        pred_array = clf.predict(pca_scaledXG, ntree_limit=clf.best_iteration)
+    else:
+        if hasattr(clf, "decision_function"):
+            pred_array = clf.decision_function(pca_scaledX)
+        else:
+            pred_array = clf.predict_proba(pca_scaledX)
+        #print("SH", pred_array.shape)
+        if len(pred_array.shape) > 1 and pred_array.shape[1] == 2:
+            pred_array = pred_array[:,1]
     #.reshape(y.shape[0], NUM_CLASS)#, ntree_limit=clf.best_iteration)
     scores = pred_array
     auc = get_auc_plot(y, scores)
@@ -348,8 +407,8 @@ def classifier_test(X, y, clf, scaler, pca):
 
 
 
-def pandas_classifier(df_train, df_test, colFeats,
-                      output_image=None, scale_pos_weight=None, 
+def pandas_classifier(df_train, df_test, colFeats, output_image=None, 
+                      method='xgb', scale_pos_weight=None, 
                       K=10, rank_avg=False, ind_fold_auc=True,
                       print_rocpr=True):
     print("Performing " + str(K) + "-fold cross validation with ", colFeats)
@@ -361,12 +420,13 @@ def pandas_classifier(df_train, df_test, colFeats,
         datatrain = df_train.loc[[i for i in range(len(df_train)) if i%K!=k]]
         # taking every k"th example for validation
         datavalid = df_train.loc[[i for i in range(len(df_train)) if i%K==k]] 
+        #print("DT :", datatrain.shape, datatrain[colFeats].shape)
         scaler, pca, clf = classifier_train(
             datatrain[colFeats], datatrain["prediction"], 
             datavalid[colFeats], datavalid["prediction"], 
-            colFeats, output_image, scale_pos_weight)
+            colFeats, output_image, scale_pos_weight, False, method)
         pred_array, auc = classifier_test(datavalid[colFeats],
-            datavalid["prediction"], clf, scaler, None)
+            datavalid["prediction"], clf, scaler, None, method)
         auc_fold.append(auc[0])
         pr_fold.append(auc[1])
         if ind_fold_auc is True:
@@ -418,11 +478,11 @@ def sim_load_dataset(edge_weights_file):
 
 
 def sim_learn_classify_test(df_train, df_test, allOnes, allZeros,
-                            colFeats, output_image):
+                            colFeats, output_image, method):
     sim_results = {}
     nfeat = str(len(colFeats))
     _,_, auroc, sroc, aupr, spr = pandas_classifier(df_train, df_test, 
-            colFeats, output_image, ind_fold_auc=False)
+            colFeats, output_image, method=method, ind_fold_auc=False)
     sim_results["ENGRAIN"] = [auroc, aupr]
     sim_results["STD_ENGRAIN"] = [sroc, spr]
     ind_rpr = individual_method(df_test, colFeats, rank_avg=True)
@@ -433,56 +493,64 @@ def sim_learn_classify_test(df_train, df_test, allOnes, allZeros,
     return sim_results
 
 def sim_analyse(df_train, df_test, allOnes, allZeros,
-                output_image_pfx):
+                output_image_pfx, method):
     colFeats = [c for c in df_train.columns if c not in ["prediction", "edge"]]
     output_image = output_image_pfx + "-full.png"
     sim_results = sim_learn_classify_test(df_train, df_test, allOnes, allZeros,
-                                          colFeats, output_image)
+                                          colFeats, output_image, method)
     if "genie3" in df_train.columns:
        colFeats7 = ["clr", "grnboost", "aracne", "mrnet", "tinge", "wgcna", "genie3"]
        output_image = output_image_pfx + "-top7.png"
        sim_results7 = sim_learn_classify_test(df_train, df_test, allOnes, allZeros,
-                                              colFeats7, output_image)
+                                              colFeats7, output_image, method)
        sim_results7 = {"Top7-"+x:y for x,y in sim_results7.items()}
        sim_results.update(sim_results7)
     else:
        colFeats6 = ["clr", "grnboost", "aracne", "mrnet", "tinge", "wgcna"]
        output_image = output_image_pfx + "-top6.png"
        sim_results6 = sim_learn_classify_test(df_train, df_test, allOnes, allZeros,
-                                              colFeats6, output_image)
+                                              colFeats6, output_image, method)
        sim_results6 = {"Top6-"+x:y for x,y in sim_results6.items()}
        sim_results.update(sim_results6)
     return pd.DataFrame.from_dict(sim_results, orient="index",
                 columns=["AUROC", "AUPR"])
 
 def sim_load_v5_dataset():
-    return sim_load_dataset("data/yeast-edge-weights-v5.csv")
+    return sim_load_dataset("data/yeast-edge-weights-v5.csv.gz")
 
 def sim_load_v4_dataset():
-    return sim_load_dataset("data/yeast-edge-weights-v4.csv")
+    return sim_load_dataset("data/yeast-edge-weights-v4.csv.gz")
 
 def sim_load_v3_dataset():
-    return sim_load_dataset("data/yeast-edge-weights-v3.csv")
+    return sim_load_dataset("data/yeast-edge-weights-v3.csv.gz")
 
-def sim_analysis_data(dataset_version):
+def sim_analysis_data(dataset_version, output_file, method):
+    img_pfx = dataset_version + "-analysis-" + method
     if dataset_version == "v5":
         df_train, df_test, allOnes, allZeros = sim_load_v5_dataset()
         print("Running analysis for Simlated dataset v5")
-        dfx = sim_analyse(df_train, df_test, allOnes, allZeros, "v5-analysis")
+        dfx = sim_analyse(df_train, df_test, allOnes, allZeros,
+                          img_pfx, method)
         print(dfx)
     elif dataset_version == "v4":
         df_train, df_test, allOnes, allZeros = sim_load_v4_dataset()
         print("Running analysis for Simlated dataset v4")
-        dfx = sim_analyse(df_train, df_test, allOnes, allZeros, "v4-analysis")
+        dfx = sim_analyse(df_train, df_test, allOnes, allZeros, 
+                          img_pfx, method)
         print(dfx)
     elif dataset_version == "v3":
         df_train, df_test, allOnes, allZeros = sim_load_v3_dataset()
         print("Running analysis for Simlated dataset v3")
-        dfx = sim_analyse(df_train, df_test, allOnes, allZeros, "v3-analysis")
+        dfx = sim_analyse(df_train, df_test, allOnes, allZeros,
+                          img_pfx, method)
         print(dfx)
+    if output_file is None:
+        output_file = img_pfx + ".csv"
+    if dataset_version in ["v3", "v4", "v5"]:
+        dfx.to_csv(output_file)
  
 
-def sim_2k_analysis():
+def sim_2k_analysis(method):
     files_2k  ={
       "250"  : "../data/yeast-edges-weights-2000.250.csv",
       "500"  : "../data/yeast-edges-weights-2000.500.csv",
@@ -493,18 +561,19 @@ def sim_2k_analysis():
       "1750" : "../data/yeast-edges-weights-2000.1750.csv",
       "2000" : "../data/yeast-edges-weights-2000.2000.csv"
       }
-    out_file = "sim_2k_engrain.csv"
+    out_file = "sim_2k_engrain_" + method + ".csv"
     df_2k = pd.DataFrame()
     for kx, fy in files_2k.items():
         df_train, df_test, allOnes, allZeros = sim_load_dataset(fy)
         print("Loaded dataset : ", kx, fy)
+        img_pfx = "m" + kx + "-2kanalysis-" + method
         dfx = sim_analyse(df_train, df_test, allOnes, allZeros,
-                          "m" + kx + "-2kanalysis")
+                          img_pfx, method)
         df_2k["AUROC-" + kx] = dfx["AUROC"]
         df_2k["AUPR-" + kx] = dfx["AUPR"]
     df_2k.to_csv(out_file)
 
-def sim_analysis(options_file, output_file):
+def sim_analysis(options_file, output_file, method):
     with open(options_file) as f:
         jsx = json.load(f)
     out_img_pfx = jsx["OUT_PREFIX"]
@@ -513,14 +582,15 @@ def sim_analysis(options_file, output_file):
         df_train, df_test, allOnes, allZeros = sim_load_dataset(fy)
         print("Loaded dataset : ", kx, fy)
         dfx = sim_analyse(df_train, df_test, allOnes, allZeros,
-                          out_img_pfx + kx)
+                          out_img_pfx + kx, method)
         sim_df["AUROC-" + kx] = dfx["AUROC"]
         sim_df["AUPR-" + kx] = dfx["AUPR"]
     sim_df.to_csv(output_file)
 
 
-def engrain_ensemble_train(train_files, colFeats, output_image,
-                           pos_ratio=0.5, neg_ratio=0.5, scale_pos_weight=None,
+def engrain_ensemble_train(train_files, colFeats, output_image, method,
+                           pos_ratio=0.5, neg_ratio=0.5, 
+                           scale_pos_weight=None,
                            random_seed=5):
     # split test and train
     if random_seed is not None:
@@ -544,13 +614,14 @@ def engrain_ensemble_train(train_files, colFeats, output_image,
     df_tis = df_tis.fillna(0)
     df_excl = pd.concat([tisOnes.drop(lselect1, axis=0), tisZeros.drop(lselect2, axis=0)], ignore_index=True)
     trained_params_tissue = pandas_classifier(df_tis, df_excl, colFeats,
-                                              output_image, scale_pos_weight)
+                                              output_image, method=method, 
+                                              scale_pos_weight=scale_pos_weight)
     return trained_params_tissue, df_tis, df_excl
 
 
 
 def stacked_ensemble_train(train_files, tissue_types_train,
-                           colFeats, output_image, df_test=None, 
+                           colFeats, output_image, method, df_test=None, 
                            fold_auc=False):
     # training
     df_tis_train = pd.DataFrame([])
@@ -569,20 +640,20 @@ def stacked_ensemble_train(train_files, tissue_types_train,
     #print(df_tis_train.head(), colFeats)
     if df_test is None:
        trained_params_tissue = pandas_classifier(df_tis_train, df_tis_train,
-                    colFeats, output_image, ind_fold_auc=fold_auc)
+                    colFeats, output_image, method=method, ind_fold_auc=fold_auc)
     else:
        trained_params_tissue = pandas_classifier(df_tis_train, df_test,
-               colFeats, output_image, ind_fold_auc=fold_auc)
+               colFeats, output_image, method, ind_fold_auc=fold_auc)
     return trained_params_tissue
 
 
 
-def engrain_predict(train_files, network_file, colFeats, output_image,
+def engrain_predict(train_files, network_file, colFeats, output_image, method,
                     pos_ratio=0.5, neg_ratio=0.5, scale_pos_weight=None,
                     random_seed=5):
     a, df_in, df_out =  engrain_ensemble_train(train_files, colFeats, output_image,
-                                            pos_ratio, neg_ratio, scale_pos_weight,
-                                            random_seed)
+                                            method, pos_ratio, neg_ratio, 
+                                            scale_pos_weight, random_seed)
     clf, scaler, tauroc, _, taupr, _ = a
     if network_file is not None:
         df_tis  = pd.read_csv(network_file, sep=',')
@@ -597,7 +668,7 @@ def engrain_predict(train_files, network_file, colFeats, output_image,
     else:
         return None, df_in, df_out, tauroc, taupr
 
-def engrain_ensemble_predict(options_file,  network_file, output_file):
+def engrain_ensemble_predict(options_file,  network_file, output_file, method):
     with open(options_file) as jfptr:
         jsx = json.load(jfptr)
     #train_files = {"positives": train_dir + "/all-positives.csv",
@@ -608,7 +679,7 @@ def engrain_ensemble_predict(options_file,  network_file, output_file):
     colFeats = jsx["FEATURES"]
     output_image = jsx["OUT_PREFIX"] + "-feats.png"
     df_tis, df_in, df_out, tauroc, taupr = engrain_predict(train_files,
-                                        network_file, colFeats, output_image)
+                                        network_file, colFeats, output_image, method)
     if output_file is not None and output_file.endswith("tsv"):
         df_out_file = output_file.replace(".tsv", "_df_out.tsv")
         df_in_file = output_file.replace(".tsv", "_df_in.tsv")
@@ -624,7 +695,8 @@ def engrain_ensemble_predict(options_file,  network_file, output_file):
 
 
 
-def engrain_stacked_ensemble_predict(options_file, network_file, output_file):
+def engrain_stacked_ensemble_predict(options_file, network_file, 
+                                     output_file, method):
     with open(options_file) as jfptr:
         jsx = json.load(jfptr)
     data_dir = jsx["DATA_DIR"]  + "/"
@@ -637,7 +709,7 @@ def engrain_stacked_ensemble_predict(options_file, network_file, output_file):
     train_files = {"positives" : pos_files, "negatives": neg_files}
     print("TRAIN WITH Features:", ",".join(colFeats), end="; ")
     clf, scaler, _, _, _, _ = stacked_ensemble_train(
-            train_files, tissue_types_train, colFeats, output_image)
+            train_files, tissue_types_train, colFeats, output_image, method)
     # if network file and output file are available, then generate predictions.
     if network_file is not None and output_file is not None:
         df_tis  = pd.read_csv(network_file, sep=',')
@@ -650,7 +722,7 @@ def engrain_stacked_ensemble_predict(options_file, network_file, output_file):
 
 
 
-def ensemble_grid_search_rocpr(options_file, output_file):
+def ensemble_grid_search_rocpr(options_file, output_file, method):
     with open(options_file) as jfptr:
         jsx = json.load(jfptr)
     train_dir = jsx["DATA_DIR"]  + "/"
@@ -686,7 +758,7 @@ def ensemble_grid_search_rocpr(options_file, output_file):
         auroc_lst = [0.0 for _ in range(nrounds)]
         for i in range(nrounds):
             a, df_in, df_out =  engrain_ensemble_train(train_files, colFeats, 
-                                         output_image, pos_ratio, neg_ratio, 
+                                         output_image, method, pos_ratio, neg_ratio, 
                                          scale_pos_weight, random_seed)
             _, _, tauroc, _, taupr, _ = a
             aupr_lst[i] = taupr
@@ -713,7 +785,8 @@ def ensemble_grid_search_rocpr(options_file, output_file):
         ofptr.write(",".join([str(x) for x in oelts]) + "\n")
     ofptr.close()
 
-def ensemble_grid_search_tpfp(options_file, network_file, output_file):
+def ensemble_grid_search_tpfp(options_file, network_file, 
+                              output_file, method):
     # network and output file1
     #
     with open(options_file) as jfptr:
@@ -750,7 +823,8 @@ def ensemble_grid_search_tpfp(options_file, network_file, output_file):
         neg_ratio = float(q)
         scale_pos_weight = r if r is None else float(r)
         df_tis, df_in, df_out, tauroc, taupr = engrain_predict(train_files,
-                                        network_file, colFeats, output_image,
+                                        network_file, colFeats, output_image, 
+                                        method,
                                         pos_ratio, neg_ratio, scale_pos_weight,
                                         random_seed)
         for nx in jsx["OUT_EDGES"]: 
@@ -778,7 +852,7 @@ def ensemble_grid_search_tpfp(options_file, network_file, output_file):
 
 
 
-def cross_tissue_ensemble(options_file, output_file):
+def cross_tissue_ensemble(options_file, output_file, method):
     with open(options_file) as fx:
         jsx = json.load(fx)
     out_img_pfx = jsx["OUT_PREFIX"]
@@ -799,7 +873,7 @@ def cross_tissue_ensemble(options_file, output_file):
         output_image = out_img_pfx + "-" + "-".join(tissue_types_train)  + ".png"
         print("TRAIN SET:", tissue_types_train, ";OUTPUT IMAGE:", output_image, end="; ")
         clf, scaler, _, _, _, _ = stacked_ensemble_train(train_files, 
-                     tissue_types_train, colFeats, output_image)
+                     tissue_types_train, colFeats, output_image, method)
         tissue_types_test = list(set(tissue_types) - set(tissue_types_train))
         ensemble_dct = { x: "Tr" for x in tissue_types_train}
         # testing
@@ -817,7 +891,7 @@ def cross_tissue_ensemble(options_file, output_file):
                     ";FEATS:", len(colFeats), ";SHAPE:",
                     df_test.shape, ";NAs:", df_test["prediction"].isna().sum(), end=" ")
             pred_array, auc = classifier_test(df_test[colFeats], df_test["prediction"],
-                                              clf, scaler, None)
+                                              clf, scaler, None, method=method)
             print("ENSEMBLE", tx, "AUC:", auc[0], ";AUPR:", auc[1], end=" ")
             #print("individual methods on arabidopsis: [auroc, aupr]")
             ind_results = individual_method(df_test, colFeats,
@@ -949,6 +1023,10 @@ if __name__ == "__main__":
             250,500,750,1000,1250,1500,1750 & 2000 observations.""")
     PARSER_SIM.add_argument("-o", "--output_file", default=None,
                             help="""Output File""")
+      ## Supervison method
+    PARSER_SIM.add_argument("-m", "--super_method", default='xgb',
+                 choices=['svc', 'rf', 'mlp', 'sgd', 'xgb'],
+                 help="""Should be one of 'xgb', 'rf', 'svc', 'mlp', 'sgd'""")
     # ravgu: Rank average of union networks 
     PARSER_RVGU = SUBPARSERS.add_parser("ravgu", 
             help="Run Rank Avg.&ScaleSum of union networks for A. thaliana Datasets")
@@ -967,7 +1045,11 @@ if __name__ == "__main__":
     PARSER_XTS.add_argument("options_file", help="""JSON File w. Input Options""")
     PARSER_XTS.add_argument("-o", "--output_file", default=None,
                             help="""Output File""")
-   #
+      ## Supervison method
+    PARSER_XTS.add_argument("-m", "--super_method", default='xgb',
+                 choices=['svc', 'rf', 'mlp', 'sgd', 'xgb'],
+                 help="""Should be one of 'xgb', 'rf', 'svc', 'mlp', 'sgd'""")
+    #
     # The "predicts" command: Stacked predict
     PARSER_PRED = SUBPARSERS.add_parser("pred_stk", 
                 help="Stacked Predictions for A. thaliana Networks")
@@ -976,6 +1058,10 @@ if __name__ == "__main__":
                         default="edge_networks/union-all-networks.csv",
                         help="""network build from a reverse engineering methods
                                 (network is a csv file)""")
+      ## Supervison method
+    PARSER_PRED.add_argument("-m", "--super_method", default='xgb',
+                 choices=['svc', 'rf', 'mlp', 'sgd', 'xgb'],
+                 help="""Should be one of 'xgb', 'rf', 'svc', 'mlp', 'sgd'""")
     PARSER_PRED.add_argument("-o", "--output_file", default=None,
                          help="""Output File""")
     #
@@ -990,12 +1076,20 @@ if __name__ == "__main__":
                                 (network is a csv file)""")
     PARSER_ENS.add_argument("-o", "--output_file", default=None,
                          help="""Output File""")
-   # "grid_rocpr" command: Grid Search with Arabidopsis and eval ROC/PR
+      ## Supervison method
+    PARSER_ENS.add_argument("-m", "--super_method", default='xgb',
+                 choices=['svc', 'rf', 'mlp', 'sgd', 'xgb'],
+                 help="""Should be one of 'xgb', 'rf', 'svc', 'mlp', 'sgd'""")
+    # "grid_rocpr" command: Grid Search with Arabidopsis and eval ROC/PR
     PARSER_GDS = SUBPARSERS.add_parser("grids_rocpr", 
             help="Run Grid Search with XGBoost params for A. thaliana Datasets")
     PARSER_GDS.add_argument("options_file", help="""JSON File w. Input Options""")
     PARSER_GDS.add_argument("-o", "--output_file", default=None,
                             help="""Output File""")
+       ## Supervison method
+    PARSER_GDS.add_argument("-m", "--super_method", default='xgb',
+                 choices=['svc', 'rf', 'mlp', 'sgd', 'xgb'],
+                 help="""Should be one of 'xgb', 'rf', 'svc', 'mlp', 'sgd'""")
     # "grid_tpfp" command: Grid Search with Arabidopsis and eval TP/FP
     PARSER_GDSTFP = SUBPARSERS.add_parser("grids_tpfp", 
             help="Run Grid Search with XGBoost params for A. thaliana Datasets")
@@ -1006,6 +1100,10 @@ if __name__ == "__main__":
                                 (network is a csv file)""")
     PARSER_GDSTFP.add_argument("-o", "--output_file", default=None,
                                help="""Output File""")
+       ## Supervison method
+    PARSER_GDSTFP.add_argument("-m", "--super_method", default='xgb',
+                 choices=['svc', 'rf', 'mlp', 'sgd', 'xgb'],
+                 help="""Should be one of 'xgb', 'rf', 'svc', 'mlp', 'sgd'""")
  
 
     # Prase args
@@ -1017,13 +1115,14 @@ if __name__ == "__main__":
     print(" -> Output File : ",  ARGS.output_file)
     if run_type == "sim":
         if ARGS.options_file in ["v3", "v4", "v5"]:
-            sim_analysis_data(ARGS.options_file)
+            sim_analysis_data(ARGS.options_file, ARGS.output_file, ARGS.super_method)
         elif ARGS.options_file == "2k":
-            sim_2k_analysis()
+            sim_2k_analysis(ARGS.super_method)
         else:
-            sim_analysis(ARGS.options_file, ARGS.output_file)
+            sim_analysis(ARGS.options_file, ARGS.output_file, ARGS.super_method)
     elif run_type == "xtissue":
-        cross_tissue_ensemble(ARGS.options_file, ARGS.output_file) 
+        cross_tissue_ensemble(ARGS.options_file, ARGS.output_file, 
+                              ARGS.super_method) 
     elif run_type == "ravgu":
         analyse_rankavg_of_union(ARGS.options_file, ARGS.output_file) 
     elif run_type == "ravg":
@@ -1031,15 +1130,17 @@ if __name__ == "__main__":
     elif run_type == "pred_stk":
         print(" -> Network File : ",  ARGS.network_file)
         engrain_stacked_ensemble_predict(ARGS.options_file, ARGS.network_file,
-                                         ARGS.output_file)
+                                         ARGS.output_file, ARGS.super_method)
     elif run_type == "pred_ens":
         print(" -> Network File : ",  ARGS.network_file)
         engrain_ensemble_predict(ARGS.options_file, ARGS.network_file,
-                                 ARGS.output_file)
+                                 ARGS.output_file, ARGS.super_method)
     elif run_type == "grids_rocpr":
-        ensemble_grid_search_rocpr(ARGS.options_file, ARGS.output_file)
+        ensemble_grid_search_rocpr(ARGS.options_file, ARGS.output_file, 
+                                   ARGS.super_method)
     elif run_type == "grids_tpfp":
-        ensemble_grid_search_tpfp(ARGS.options_file, ARGS.network_file, ARGS.output_file)
+        ensemble_grid_search_tpfp(ARGS.options_file, ARGS.network_file, 
+                                  ARGS.output_file, ARGS.super_method)
     else:
         print("Invalid Command!!!")
  
