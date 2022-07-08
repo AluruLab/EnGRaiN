@@ -1,5 +1,6 @@
 # EnGRaiN
-========================================================================
+---
+
 [![Apache 2.0 License](https://img.shields.io/badge/license-Apache%20v2.0-blue.svg)](LICENSE)
 [![GitHub Downloads](https://img.shields.io/github/downloads/AluruLab/EnGRaiN/total.svg?style=social&logo=github&label=Download)](https://github.com/AluruLab/EnGRaiN/releases)
 
